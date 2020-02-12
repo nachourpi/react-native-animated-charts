@@ -1,4 +1,4 @@
-# react-native-infinite-looping-scroll
+# react-native-animated-chart
 
 A React Native bar chart component animated fully on UI thread and with non external dependecies
 
