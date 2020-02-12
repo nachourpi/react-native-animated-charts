@@ -1,4 +1,4 @@
-import BarChart from './src/BarChart';
+import BarChart from './BarChart';
 
 
 // without default
