@@ -1,0 +1,23 @@
+{
+  "name": "react-native-animated-charts",
+  "version": "0.0.1",
+  "publishConfig": { "registry": "https://npm.pkg.github.com/" },
+  "description": "React Native bar chart component animated fully on UI thread and non dependecies",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "react",
+    "native",
+    "chart",
+    "animated",
+    "barchart"
+  ],
+  "peerDependencies": {
+    "react": "^16.9.0",
+    "react-native": "^0.61.2"
+  },
+  "author": "Ignacio Urpi",
+  "license": "ISC"
+}
