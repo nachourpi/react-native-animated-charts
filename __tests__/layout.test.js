@@ -1,11 +1,17 @@
 import {
+  computeAutoHeight,
   computeBarHeights,
   computeBarMargin,
+  computeBounds,
+  computeSlot,
   computeDelay,
   computeRowLayout,
   computeTicks,
   resolveColor,
+  normalizeSeries,
   resolveSelectedIndex,
+  segmentTiming,
+  tooltipPlacement,
 } from '../src/layout';
 
 describe('computeBarHeights', () => {
@@ -59,7 +65,7 @@ describe('computeTicks', () => {
   });
   it('survives empty / zero / invalid data and counts', () => {
     expect(computeTicks([], 4)).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1]);
-    expect(computeTicks([0, -3, NaN], 2)).toEqual([0, 0.5, 1]);
+    expect(computeTicks([0, NaN, 'x'], 2)).toEqual([0, 0.5, 1]);
     expect(computeTicks([10], 0).length).toBeGreaterThan(1);
   });
 });
@@ -91,5 +97,101 @@ describe('public exports', () => {
   it('exposes computeTicks from the package entry', () => {
     // eslint-disable-next-line global-require
     expect(require('../src').computeTicks([410], 4)).toEqual([0, 100, 200, 300, 400, 500]);
+  });
+});
+
+describe('negative values', () => {
+  it('ticks span below zero and always include 0', () => {
+    expect(computeTicks([-120, 340], 4)).toEqual([-200, -100, 0, 100, 200, 300, 400]);
+    expect(computeTicks([-30, -80], 4)).toEqual([-80, -60, -40, -20, 0]);
+    expect(computeTicks([0, -3, NaN], 2)).toEqual([-4, -2, 0]);
+  });
+  it('fixed min/max split exactly', () => {
+    expect(computeTicks([5], 4, 100, -100)).toEqual([-100, -50, 0, 50, 100]);
+    expect(computeTicks([-50, 10], 2, undefined, -100)).toEqual([-100, -45, 10]);
+  });
+  it('bounds cover data, sums when stacked, and fixed ends', () => {
+    expect(computeBounds([[3, -2], [1, 4]])).toEqual({ lo: -2, hi: 4 });
+    expect(computeBounds([[3, -2], [1, 4]], { stacked: true })).toEqual({ lo: -2, hi: 5 });
+    expect(computeBounds([[3]], { maxValue: 10, minValue: -5 })).toEqual({ lo: -5, hi: 10 });
+    expect(computeBounds([[3]], { minValue: 5 })).toEqual({ lo: 0, hi: 3 });
+    expect(computeBounds([[-4]])).toEqual({ lo: -4, hi: 0 });
+    expect(computeBounds([[0]])).toEqual({ lo: 0, hi: 1 });
+  });
+});
+
+describe('normalizeSeries', () => {
+  it('turns dataY or series into a category × series matrix', () => {
+    expect(normalizeSeries(null, [1, '2', NaN]).values).toEqual([[1], [2], [0]]);
+    const r = normalizeSeries([{ data: [1, 2, 3] }, { data: [4] }, null]);
+    expect(r.count).toBe(3);
+    expect(r.values).toEqual([[1, 4, 0], [2, 0, 0], [3, 0, 0]]);
+  });
+});
+
+describe('computeSlot', () => {
+  const g = { lo: -20, hi: 50, posLength: 100, negLength: 40 };
+  it('grouped: one bar per series on its own side', () => {
+    const { bars, anchor } = computeSlot([30, -20, 10], g);
+    expect(bars.map((b) => [b.pos, b.neg])).toEqual([[60, 0], [0, 40], [20, 0]]);
+    expect(anchor).toEqual({ series: 0, side: 'pos', length: 60 });
+  });
+  it('grouped: anchors on the most negative bar when nothing is positive', () => {
+    expect(computeSlot([-5, -20], g).anchor).toEqual({ series: 1, side: 'neg', length: 40 });
+  });
+  it('single series anchors by sign', () => {
+    expect(computeSlot([-10], g).anchor).toEqual({ series: 0, side: 'neg', length: 20 });
+    expect(computeSlot([0], g).anchor.side).toBe('pos');
+  });
+  it('stacked: cumulative ends per direction, radius only on the outer segments', () => {
+    const { bars, anchor, total } = computeSlot([30, 20, -10], { ...g, stacked: true });
+    expect(bars.map((b) => [b.pos, b.neg])).toEqual([[60, 0], [100, 0], [0, 20]]);
+    expect(bars.map((b) => [b.posRadius, b.negRadius])).toEqual([[false, false], [true, false], [false, true]]);
+    expect(anchor).toEqual({ series: 1, side: 'pos', length: 100 });
+    expect(total).toBe(40);
+  });
+  it('stacked: anchors below the baseline when the total is negative', () => {
+    expect(computeSlot([5, -20], { ...g, stacked: true }).anchor).toEqual({ series: 1, side: 'neg', length: 40 });
+  });
+  it('clamps values beyond fixed bounds and survives empty slots', () => {
+    expect(computeSlot([500, -500], g).bars.map((b) => [b.pos, b.neg])).toEqual([[100, 0], [0, 40]]);
+    expect(computeSlot([], g).bars).toEqual([]);
+  });
+});
+
+describe('tooltipPlacement', () => {
+  it('vertical: outside when the tooltip fits past the bar end', () => {
+    expect(tooltipPlacement({ length: 190, regionLength: 200, extraSpace: 24 })).toBe('outside');
+    expect(tooltipPlacement({ length: 200, regionLength: 200, extraSpace: 24, lines: 3 })).toBe('inside');
+  });
+  it('horizontal: inside for bars longer than half the region', () => {
+    expect(tooltipPlacement({ horizontal: true, length: 160, regionLength: 300 })).toBe('inside');
+    expect(tooltipPlacement({ horizontal: true, length: 100, regionLength: 300 })).toBe('outside');
+  });
+});
+
+describe('computeAutoHeight', () => {
+  it('grows with the number of categories and grouped series', () => {
+    expect(computeAutoHeight(5)).toBe(160);
+    expect(computeAutoHeight(15)).toBe(480);
+    expect(computeAutoHeight(5, { seriesCount: 3 })).toBe(240);
+    expect(computeAutoHeight(5, { seriesCount: 3, stacked: true, extra: 18 })).toBe(178);
+    expect(computeAutoHeight(0)).toBe(40);
+  });
+});
+
+describe('segmentTiming', () => {
+  it('keeps timing when the sign does not change', () => {
+    expect(segmentTiming({ pos: 10, neg: 0 }, { pos: 50, neg: 0 }, 'pos', 300, 40)).toEqual({ duration: 300, delay: 40 });
+    expect(segmentTiming(null, { pos: 50, neg: 0 }, 'pos', 300, 0)).toEqual({ duration: 300, delay: 0 });
+  });
+  it('shrinks the old side first, then grows the new one', () => {
+    const prev = { pos: 40, neg: 0 };
+    const next = { pos: 0, neg: 20 };
+    expect(segmentTiming(prev, next, 'pos', 300, 40)).toEqual({ duration: 150, delay: 40 });
+    expect(segmentTiming(prev, next, 'neg', 300, 40)).toEqual({ duration: 150, delay: 190 });
+  });
+  it('does nothing special without animation', () => {
+    expect(segmentTiming({ pos: 40, neg: 0 }, { pos: 0, neg: 20 }, 'neg', 0, 0)).toEqual({ duration: 0, delay: 0 });
   });
 });

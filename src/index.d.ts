@@ -4,25 +4,50 @@ import { EasingFunction, StyleProp, TextStyle, ViewStyle } from 'react-native';
 export type BarColor = string | string[] | ((value: number, index: number) => string);
 
 export interface BarPressEvent {
+  /** Category index. */
   index: number;
+  /** The bar's value; with `series`, the sum of all series for this category. */
   value: number;
+  /** One value per series (a single item without `series`). */
+  values: number[];
   label: string | null;
   xLabel?: string;
 }
 
+export interface BarSeries {
+  /** One value per category. Missing / non-numeric values count as 0. */
+  data: number[];
+  /** Shown in the legend and tooltip. */
+  name?: string;
+  /** Series color: a string, a palette cycled per category, or a function. */
+  color?: BarColor;
+}
+
 export interface BarChartProps {
-  /** Values to plot. Negative / non-numeric values render as 0. */
-  dataY: number[];
+  /** Values to plot. Negative values are drawn below a baseline; non-numeric values count as 0. */
+  dataY?: number[];
+  /**
+   * Several series per category: side by side (grouped) or on top of each other with `stacked`.
+   * When set, `dataY` is ignored.
+   */
+  series?: BarSeries[];
+  /** Stack `series` instead of grouping them. Positive and negative values stack separately. */
+  stacked?: boolean;
   /** Labels shown above each bar (overrides `showValues`). */
   labels?: Array<string | null | undefined>;
   /** Labels shown under each bar (x-axis). */
   xLabels?: Array<string | null | undefined>;
   /** Single color, a palette cycled per bar, or a function. Default: `'red'`. */
   color?: BarColor;
-  /** Fixed height in px. If omitted, uses the container's height/flex, or 200. */
+  /**
+   * Fixed height in px (labels and legend included). If omitted, uses the container's
+   * height/flex; otherwise 200 for vertical charts, or sized from the number of bars when horizontal.
+   */
   height?: number;
-  /** Fixed top of the scale. Defaults to the max of `dataY`. */
+  /** Fixed top of the scale (> 0). Defaults to the largest value (or stack). */
   maxValue?: number;
+  /** Fixed bottom of the scale (< 0). Defaults to the smallest value, or 0 when nothing is negative. */
+  minValue?: number;
   /** Container styles (legacy name). */
   containerStyles?: StyleProp<ViewStyle>;
   /** Alias of `containerStyles`. */
@@ -32,11 +57,12 @@ export interface BarChartProps {
    * labels / tooltips sit at the end of each bar. Default false.
    */
   horizontal?: boolean;
-  /** Radius of the bars' outer corners (top when vertical, right when horizontal). Default 25. */
+  /** Radius of the bars' outer corners (the end away from the baseline). Default 25. */
   barRadius?: number;
   /** Show the formatted value above bars when `labels` is not given. */
   showValues?: boolean;
-  formatValue?: (value: number, index: number) => string;
+  /** Formats values for labels, tooltips and accessibility. `seriesIndex` is set for per-series values. */
+  formatValue?: (value: number, index: number, seriesIndex?: number) => string;
   labelStyle?: StyleProp<TextStyle>;
   xLabelStyle?: StyleProp<TextStyle>;
   /**
@@ -51,17 +77,29 @@ export interface BarChartProps {
   yLabelStyle?: StyleProp<TextStyle>;
   /** Color of the grid lines. Default `'#e3e3e3'`. */
   gridColor?: string;
+  /** Color of the zero line drawn when the scale goes below 0. Default `'#9e9e9e'`. */
+  baselineColor?: string;
+  /** Legend for `series`. Default: shown when any series has a `name`. */
+  showLegend?: boolean;
+  legendStyle?: StyleProp<ViewStyle>;
+  legendTextStyle?: StyleProp<TextStyle>;
   /**
    * Highlighted bar (controlled). Other bars are dimmed to `dimOpacity`.
    * Pass `null` for no selection.
    */
   selectedIndex?: number | null;
   /**
+   * Called when the user selects a bar (its index) or clears the selection (`null`):
+   * tapping the selected bar again, or the chart outside the bars. Also makes bars selectable
+   * without `showTooltip`. With `selectedIndex`, update it from here.
+   */
+  onSelectionChange?: (index: number | null) => void;
+  /**
    * Show a tooltip over the selected bar. Without `selectedIndex`, tapping a bar
-   * selects it and tapping it again clears the selection.
+   * selects it; tapping it again or the chart outside the bars clears the selection.
    */
   showTooltip?: boolean;
-  /** Tooltip text. Default: `"<xLabel>: <formatValue(value)>"`. */
+  /** Tooltip text (may contain `\n`). Default: `"<xLabel>: <value>"`, or one line per series. */
   formatTooltip?: (event: BarPressEvent) => string;
   tooltipStyle?: StyleProp<ViewStyle>;
   tooltipTextStyle?: StyleProp<TextStyle>;

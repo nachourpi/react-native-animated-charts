@@ -6,6 +6,12 @@ export const DEFAULT_HEIGHT = 200;
 export const VALUE_LABEL_SPACE = 24;
 export const X_LABEL_SPACE = 22;
 
+/** Any value → finite number (NaN, null, strings that aren't numbers → 0). */
+export const toNumber = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
 const toFinitePositive = (v) => {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : 0;
@@ -66,29 +72,37 @@ export const Y_LABEL_HEIGHT = 14;
 const roundFloat = (n) => Number(n.toFixed(10));
 
 /**
- * Evenly spaced, "nice" axis ticks starting at 0 (e.g. 0, 100, ..., 500).
+ * Evenly spaced, "nice" axis ticks that always include 0 (e.g. -200, 0, 200, 400).
  *
  * `count` is a target, like d3's ticks(): the result may have a few more or fewer
  * intervals so the step stays a round number (1, 2 or 5 × 10^k).
- * With `fixedMax` the scale is kept and split into exactly `count` intervals.
+ * With a fixed `maxValue` and/or `minValue` the scale is kept and split into
+ * exactly `count` intervals.
  *
- * @returns {number[]} ascending ticks; the last one is the top of the scale.
+ * @param {number[]} data values (or just the [min, max] bounds) to cover.
+ * @returns {number[]} ascending ticks; first and last are the ends of the scale.
  */
-export function computeTicks(data, count = 4, fixedMax) {
+export function computeTicks(data, count = 4, fixedMax, fixedMin) {
   const n = Math.max(1, Math.round(Number(count)) || 4);
-  const fixed = toFinitePositive(fixedMax);
-  if (fixed) return Array.from({ length: n + 1 }, (_, i) => roundFloat((fixed * i) / n));
+  const values = Array.isArray(data) ? data.map(toNumber) : [];
+  const fMax = toFinitePositive(fixedMax) || null;
+  const fMin = Number.isFinite(Number(fixedMin)) && Number(fixedMin) < 0 ? Number(fixedMin) : null;
+  let hi = fMax != null ? fMax : Math.max(0, ...values);
+  const lo = fMin != null ? fMin : Math.min(0, ...values);
 
-  const values = Array.isArray(data) ? data.map(toFinitePositive) : [];
-  const max = values.length ? Math.max(...values) : 0;
-  const top = max > 0 ? max : 1;
+  if (fMax != null || fMin != null) {
+    if (hi <= lo) hi = lo + 1;
+    return Array.from({ length: n + 1 }, (_, i) => roundFloat(lo + ((hi - lo) * i) / n));
+  }
 
-  const raw = top / n;
+  if (hi === lo) hi = 1;
+  const raw = (hi - lo) / n;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const err = raw / mag;
   const step = mag * (err >= Math.sqrt(50) ? 10 : err >= Math.sqrt(10) ? 5 : err >= Math.sqrt(2) ? 2 : 1);
-  const intervals = Math.max(1, Math.ceil(roundFloat(top / step)));
-  return Array.from({ length: intervals + 1 }, (_, i) => roundFloat(i * step));
+  const first = Math.floor(roundFloat(lo / step));
+  const last = Math.max(first + 1, Math.ceil(roundFloat(hi / step)));
+  return Array.from({ length: last - first + 1 }, (_, i) => roundFloat((first + i) * step));
 }
 
 /**
@@ -109,4 +123,134 @@ export function computeRowLayout(count, height, gapRatio = 0.4) {
 export function resolveSelectedIndex(controlled, internal, count) {
   const idx = controlled !== undefined ? controlled : internal;
   return Number.isInteger(idx) && idx >= 0 && idx < count ? idx : null;
+}
+
+export const DEFAULT_PALETTE = ['#4f7cbd', '#e07a3a', '#3aa76d', '#8e6fd1', '#d9534f', '#e0a526'];
+/** Default slot size (px) per category when a horizontal chart sizes itself. */
+export const H_AUTO_SLOT = 32;
+
+/**
+ * Normalizes `series` (or the single `dataY` array) into a category × series matrix.
+ * @returns {{ list: object[], count: number, values: number[][] }}
+ */
+export function normalizeSeries(series, dataY) {
+  const list = Array.isArray(series) && series.length ? series : [{ data: dataY }];
+  const lengths = list.map((s) => (s && Array.isArray(s.data) ? s.data.length : 0));
+  const count = Math.max(0, ...lengths);
+  const values = Array.from({ length: count }, (_, i) => list.map((s) => toNumber(s && s.data ? s.data[i] : 0)));
+  return { list, count, values };
+}
+
+/**
+ * Ends of the value scale: always spans 0, grows to cover the data (sums when stacked),
+ * and honors fixed `maxValue` (> 0) / `minValue` (< 0).
+ * @returns {{ lo: number, hi: number }} lo <= 0 < hi
+ */
+export function computeBounds(values, { stacked = false, maxValue, minValue } = {}) {
+  let dataHi = 0;
+  let dataLo = 0;
+  (values || []).forEach((vals) => {
+    const pos = stacked ? vals.reduce((a, v) => a + Math.max(0, v), 0) : Math.max(0, ...vals);
+    const neg = stacked ? vals.reduce((a, v) => a + Math.min(0, v), 0) : Math.min(0, ...vals);
+    dataHi = Math.max(dataHi, pos);
+    dataLo = Math.min(dataLo, neg);
+  });
+  const fMax = toFinitePositive(maxValue);
+  const fMin = Number(minValue);
+  const hi = fMax || dataHi;
+  const lo = Number.isFinite(fMin) && fMin < 0 ? fMin : dataLo;
+  return { lo, hi: hi > 0 || lo < 0 ? hi : 1 };
+}
+
+/**
+ * Pixel geometry of one category (slot).
+ *
+ * `posLength` / `negLength` are the px lengths of the regions above / below the baseline.
+ * Every series gets a positive and a negative segment (one of them 0) so a bar can change
+ * sign smoothly. When stacked, each non-empty segment spans from the baseline to its cumulative
+ * end and is drawn behind the previous series (painter's order), so segments never overlap visually.
+ *
+ * @returns {{ bars: {pos:number,neg:number,posRadius:boolean,negRadius:boolean}[],
+ *             anchor: {series:number, side:'pos'|'neg', length:number}, total:number }}
+ */
+export function computeSlot(vals, { stacked = false, lo, hi, posLength, negLength }) {
+  const P = Math.max(0, posLength || 0);
+  const N = Math.max(0, negLength || 0);
+  const scalePos = (v) => (hi > 0 ? Math.round(Math.min(P, (v / hi) * P)) : 0);
+  const scaleNeg = (v) => (lo < 0 && v < 0 ? Math.round(Math.min(N, (v / lo) * N)) : 0);
+  const total = vals.reduce((a, v) => a + v, 0);
+  if (!vals.length) return { bars: [], anchor: { series: 0, side: 'pos', length: 0 }, total };
+  let bars;
+  let anchor;
+
+  if (stacked) {
+    let cp = 0;
+    let cn = 0;
+    let lastPos = -1;
+    let lastNeg = -1;
+    bars = vals.map((v, s) => {
+      if (v > 0) {
+        cp += v;
+        lastPos = s;
+      } else if (v < 0) {
+        cn += v;
+        lastNeg = s;
+      }
+      // A series that adds nothing in a direction draws nothing there: a segment sharing the
+      // outer end but with square corners would peek out behind the rounded top one.
+      return { pos: v > 0 ? scalePos(cp) : 0, neg: v < 0 ? scaleNeg(cn) : 0 };
+    });
+    bars.forEach((b, s) => {
+      b.posRadius = s === lastPos;
+      b.negRadius = s === lastNeg;
+    });
+    anchor = total >= 0 || lastNeg < 0 ? { series: Math.max(0, lastPos), side: 'pos' } : { series: lastNeg, side: 'neg' };
+  } else {
+    bars = vals.map((v) => ({
+      pos: v > 0 ? scalePos(v) : 0,
+      neg: v < 0 ? scaleNeg(v) : 0,
+      posRadius: true,
+      negRadius: true,
+    }));
+    if (vals.length === 1) {
+      anchor = { series: 0, side: vals[0] < 0 ? 'neg' : 'pos' };
+    } else {
+      const best = (side) => bars.reduce((b, bar, s) => (bar[side] > bars[b][side] ? s : b), 0);
+      const p = best('pos');
+      const n = best('neg');
+      anchor = bars[p].pos > 0 || !(bars[n].neg > 0) ? { series: p, side: 'pos' } : { series: n, side: 'neg' };
+    }
+  }
+  anchor.length = bars[anchor.series][anchor.side];
+  return { bars, anchor, total };
+}
+
+/**
+ * Where to draw a tooltip relative to its bar end: 'outside' (beyond the end) when it fits,
+ * otherwise 'inside' (over the bar). Vertical charts check the free space above/below the
+ * end; horizontal ones use half the region since the tooltip width isn't known up front.
+ */
+export function tooltipPlacement({ horizontal, length, regionLength, extraSpace = 0, lines = 1 }) {
+  if (horizontal) return length > regionLength / 2 ? 'inside' : 'outside';
+  const free = extraSpace + regionLength - length;
+  return free >= lines * 16 + 6 ? 'outside' : 'inside';
+}
+
+/** Height (px) a horizontal chart gives itself when no height / flex is set. */
+export function computeAutoHeight(count, { seriesCount = 1, stacked = false, extra = 0 } = {}) {
+  const perSlot = stacked || seriesCount <= 1 ? H_AUTO_SLOT : Math.max(H_AUTO_SLOT, 12 * seriesCount + 12);
+  return Math.max(40, Math.round(count * perSlot + extra));
+}
+
+/**
+ * Animation timing for one segment. When a bar changes sign, the old side first shrinks to 0
+ * (first half) and then the new side grows (second half), so the bar end crosses the baseline
+ * instead of both sides animating at once.
+ */
+export function segmentTiming(prev, next, side, duration, delay) {
+  const other = side === 'pos' ? 'neg' : 'pos';
+  const crossing = prev && ((prev[other] > 0 && next[side] > 0) || (prev[side] > 0 && next[other] > 0));
+  if (!crossing || !(duration > 0)) return { duration, delay };
+  const half = Math.round(duration / 2);
+  return next[side] > 0 ? { duration: half, delay: delay + half } : { duration: half, delay };
 }

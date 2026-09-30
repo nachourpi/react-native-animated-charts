@@ -194,3 +194,169 @@ describe('selection and tooltip', () => {
   });
 });
 
+
+describe('negative values', () => {
+  it('draws negative bars below a baseline with their labels', async () => {
+    // height 248 = 24 (labels above) + 200 plot + 24 (labels below) → 100px each side of 0
+    await render(<BarChart dataY={[50, -50]} showValues height={248} />);
+    expect(screen.getByText('-50')).toBeTruthy();
+    expect(styleOf('bar-chart-bar-1-neg').height).toBe(100);
+    expect(styleOf('bar-chart-bar-0').height).toBe(100);
+    expect(styleOf('bar-chart-baseline').top).toBe(124);
+  });
+
+  it('rounds only the outer corners of negative bars', async () => {
+    await render(<BarChart dataY={[5, -5]} barRadius={8} />);
+    const neg = styleOf('bar-chart-bar-1-neg');
+    expect(neg.borderBottomLeftRadius).toBe(8);
+    expect(neg.borderTopLeftRadius).toBeUndefined();
+  });
+
+  it('adds nothing below zero when every value is positive', async () => {
+    await render(<BarChart dataY={[1, 2]} />);
+    expect(screen.queryByTestId('bar-chart-baseline')).toBeNull();
+    expect(screen.queryByTestId('bar-chart-bar-0-neg')).toBeNull();
+  });
+
+  it('a bar changing sign keeps its old color while it retracts', async () => {
+    const color = (v) => (v < 0 ? 'red' : 'green');
+    await render(<BarChart dataY={[10, 5]} color={color} />);
+    await screen.rerender(<BarChart dataY={[-10, 5]} color={color} />);
+    expect(styleOf('bar-chart-bar-0').backgroundColor).toBe('green'); // shrinking positive side
+    expect(styleOf('bar-chart-bar-0-neg').backgroundColor).toBe('red'); // growing negative side
+  });
+
+  it('hidden segments stay parked on the baseline when the scale changes', async () => {
+    await render(<BarChart dataY={[12, -8]} height={248} />);
+    await screen.rerender(<BarChart dataY={[12, 30]} height={248} />);
+    // bar 1 had no positive part: it must still be fully hidden (offset 0 from the baseline)
+    // even though the positive region just got taller.
+    const s = styleOf('bar-chart-bar-1');
+    expect(s.top).toBe('100%');
+    expect(s.transform).toEqual([{ translateY: 0 }]);
+  });
+
+  it('puts negative ticks on the axis', async () => {
+    await render(<BarChart dataY={[-120, 340]} showYAxis />);
+    ['-200', '0', '400'].forEach((t) => expect(screen.getByText(t)).toBeTruthy());
+  });
+
+  it('works horizontally, with negatives growing to the left', async () => {
+    await render(<BarChart horizontal dataY={[40, -20]} xLabels={['a', 'b']} showValues />);
+    await layoutTrack(412); // 412 - 56 left - 56 right = 300 → 200 positive, 100 negative
+    expect(styleOf('bar-chart-bar-0').width).toBe(200);
+    expect(styleOf('bar-chart-bar-1-neg').width).toBe(100);
+    expect(styleOf('bar-chart-baseline').left).toBe(56 + 100);
+  });
+
+  it('honors minValue', async () => {
+    await render(<BarChart dataY={[10]} minValue={-10} height={248} />);
+    expect(styleOf('bar-chart-baseline').top).toBe(124);
+  });
+});
+
+describe('series', () => {
+  const series = [
+    { name: 'Sales', data: [10, 30], color: '#111' },
+    { name: 'Costs', data: [5, -8], color: '#222' },
+  ];
+
+  it('grouped: one bar per series, a legend and per-series a11y', async () => {
+    await render(<BarChart series={series} xLabels={['Jan', 'Feb']} />);
+    expect(styleOf('bar-chart-bar-0-s0').backgroundColor).toBe('#111');
+    expect(styleOf('bar-chart-bar-1-s1-neg').backgroundColor).toBe('#222');
+    expect(screen.getByTestId('bar-chart-legend')).toBeTruthy();
+    expect(screen.getByText('Sales')).toBeTruthy();
+    expect(screen.getByLabelText('Feb: Sales 30, Costs -8')).toBeTruthy();
+  });
+
+  it('grouped showValues labels every bar and passes the series index', async () => {
+    await render(<BarChart series={series} showValues formatValue={(v, i, s) => `${s}:${v}`} />);
+    ['0:10', '1:5', '0:30', '1:-8'].forEach((t) => expect(screen.getByText(t)).toBeTruthy());
+  });
+
+  it('falls back to a palette, and hides the legend when asked', async () => {
+    await render(<BarChart series={[{ data: [1] }, { data: [2] }]} color={['#aaa', '#bbb']} showLegend={false} />);
+    expect(styleOf('bar-chart-bar-0-s1').backgroundColor).toBe('#bbb');
+    expect(screen.queryByTestId('bar-chart-legend')).toBeNull();
+  });
+
+  it('shows the legend automatically only when series have names', async () => {
+    await render(<BarChart series={[{ data: [1] }, { data: [2] }]} />);
+    expect(screen.queryByTestId('bar-chart-legend')).toBeNull();
+  });
+
+  it('stacked: total label and radius only on the top segment', async () => {
+    await render(<BarChart series={series} stacked showValues barRadius={6} />);
+    expect(screen.getByText('15')).toBeTruthy(); // 10 + 5
+    expect(screen.getByText('22')).toBeTruthy(); // 30 - 8
+    expect(screen.queryByText('10')).toBeNull();
+    expect(styleOf('bar-chart-bar-0-s1').borderTopLeftRadius).toBe(6);
+    expect(styleOf('bar-chart-bar-0-s0').borderTopLeftRadius).toBe(0);
+  });
+
+  it('reports every series value on press', async () => {
+    const onBarPress = jest.fn();
+    await render(<BarChart series={series} stacked xLabels={['Jan', 'Feb']} onBarPress={onBarPress} />);
+    await fireEvent.press(screen.getByLabelText('Feb: Sales 30, Costs -8'));
+    expect(onBarPress).toHaveBeenCalledWith(expect.objectContaining({ index: 1, value: 22, values: [30, -8], xLabel: 'Feb' }));
+  });
+
+  it('multi-line tooltip with one row per series', async () => {
+    await render(<BarChart series={series} xLabels={['Jan', 'Feb']} showTooltip selectedIndex={0} />);
+    expect(screen.getByText('Jan\nSales: 10\nCosts: 5')).toBeTruthy();
+  });
+});
+
+describe('closing the tooltip', () => {
+  it('tapping the chart outside the bars clears the selection', async () => {
+    await render(<BarChart dataY={[4, 8]} showTooltip />);
+    await fireEvent.press(screen.getByLabelText('8'));
+    expect(screen.getByTestId('bar-chart-bar-1-tooltip')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('bar-chart'));
+    expect(screen.queryByTestId('bar-chart-bar-1-tooltip')).toBeNull();
+  });
+
+  it('onSelectionChange reports bar taps and background taps (controlled)', async () => {
+    const onSelectionChange = jest.fn();
+    await render(<BarChart dataY={[4, 8]} showTooltip selectedIndex={1} onSelectionChange={onSelectionChange} />);
+    await fireEvent.press(screen.getByLabelText('4'));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(0);
+    await fireEvent.press(screen.getByLabelText('8'));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(null);
+    await fireEvent.press(screen.getByTestId('bar-chart'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(3);
+    // still controlled: the tooltip stays where the parent put it
+    expect(screen.getByTestId('bar-chart-bar-1-tooltip')).toBeTruthy();
+  });
+
+  it('onSelectionChange alone makes bars selectable without a tooltip', async () => {
+    const onSelectionChange = jest.fn();
+    await render(<BarChart dataY={[4, 8]} onSelectionChange={onSelectionChange} />);
+    await fireEvent.press(screen.getByLabelText('8'));
+    expect(onSelectionChange).toHaveBeenCalledWith(1);
+    expect(screen.getByLabelText('8').props.accessibilityState).toEqual({ selected: true });
+    expect(screen.queryByTestId('bar-chart-bar-1-tooltip')).toBeNull();
+  });
+});
+
+describe('horizontal auto height', () => {
+  const heightOf = () => StyleSheet.flatten(screen.getByTestId('bar-chart').props.style).height;
+
+  it('sizes itself from the number of bars', async () => {
+    await render(<BarChart horizontal dataY={Array.from({ length: 15 }, (_, i) => i)} />);
+    expect(heightOf()).toBe(15 * 32);
+  });
+
+  it('leaves room for grouped series, the axis and the legend', async () => {
+    await render(<BarChart horizontal showYAxis series={[{ name: 'a', data: [1, 2] }, { name: 'b', data: [3, 4] }]} />);
+    expect(heightOf()).toBe(2 * 36 + 18 + 24);
+  });
+
+  it('still honors height and flex, and vertical charts keep 200', async () => {
+    await render(<BarChart horizontal dataY={[1, 2, 3]} height={90} />);
+    expect(heightOf()).toBe(90);
+    await screen.rerender(<BarChart dataY={[1, 2, 3]} />);
+    expect(heightOf()).toBe(200);
+  });
+});
