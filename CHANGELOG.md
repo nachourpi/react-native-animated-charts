@@ -1,9 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-09-30
+
+### Added
+- `horizontal`: bars grow left to right, with category labels on the left and values at the end of each bar.
+- Value axis with grid lines: `showYAxis`, `yTicks`, `formatYLabel`, `yLabelStyle`, `gridColor`. The scale is rounded up to a "nice" top value.
+- Selection: `selectedIndex` highlights a bar and fades the rest (`dimOpacity`); the fade runs on the native driver.
+- Tooltips: `showTooltip` shows a tooltip on the selected bar and makes bars tappable (uncontrolled unless `selectedIndex` is set). Customizable with `formatTooltip`, `tooltipStyle`, `tooltipTextStyle`.
+- Bars expose a `selected` accessibility state.
+- `computeTicks` is exported.
 
 ### Changed
 - Releases are published from GitHub Actions with npm trusted publishing (OIDC) and provenance.
+
+### Fixed
+- The chart no longer recomputes bar sizes on every render when `dataY` is omitted.
 
 ## 1.0.0 — 2026-09-30
 

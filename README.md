@@ -8,7 +8,7 @@ An animated bar chart for React Native.
 
 - **Runs on the UI thread** — bars animate with `transform` + `useNativeDriver`, so the JS thread can be busy and the animation stays smooth.
 - **Zero dependencies** — just `react` and `react-native`. No SVG, no Reanimated, no Skia.
-- **Tiny** — under 10 kB packed.
+- **Small** — about 13 kB packed (docs included), no build step.
 - **TypeScript types** included.
 - Works on iOS, Android and React Native Web.
 
@@ -86,6 +86,56 @@ If you don't pass `height`, the chart measures itself when its style has a `heig
 
 **Fixed scale** — pass `maxValue` so charts with different data share the same scale (e.g. percentages, or comparing two charts side by side).
 
+**Y axis with grid lines**
+
+```jsx
+<BarChart
+  dataY={[120, 340, 90, 260, 410, 180]}
+  xLabels={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']}
+  showYAxis
+  formatValue={(v) => `$${v}`}
+/>
+```
+
+The scale is rounded up to a "nice" top value (here `$0 … $500` in steps of 100). `yTicks` is a target, so the step always stays a round number; with `maxValue` the axis is split into exactly `yTicks` intervals. Axis labels use `formatValue` unless you pass `formatYLabel`.
+
+**Horizontal bars**
+
+```jsx
+<BarChart
+  horizontal
+  dataY={[82, 64, 45, 30]}
+  xLabels={['JavaScript', 'Python', 'Go', 'Rust']}
+  showValues
+  formatValue={(v) => `${v}%`}
+  maxValue={100}
+  height={200}
+/>
+```
+
+`xLabels` are drawn as category labels on the left, values sit at the end of each bar and, with `showYAxis`, the value axis goes along the bottom. Bars fill the width of the chart, and the height is split evenly between them.
+
+**Tap a bar to highlight it**
+
+```jsx
+<BarChart dataY={data} xLabels={months} showTooltip formatValue={(v) => `$${v}`} />
+```
+
+Tapping a bar selects it: the other bars fade to `dimOpacity` and a tooltip (`"Apr: $260"`) appears on the selected one; tapping it again clears the selection. To control the selection yourself, pass `selectedIndex` and update it from `onBarPress`:
+
+```jsx
+const [selected, setSelected] = useState(null);
+
+<BarChart
+  dataY={data}
+  selectedIndex={selected}
+  showTooltip
+  onBarPress={({ index }) => setSelected(index === selected ? null : index)}
+/>
+```
+
+`selectedIndex` also works without `showTooltip`, to just highlight a bar.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -98,10 +148,21 @@ If you don't pass `height`, the chart measures itself when its style has a `heig
 | `color` | `string \| string[] \| (value, index) => string` | `'red'` | One color, a palette cycled across bars, or a function. |
 | `height` | `number` | measured / `200` | Fixed height in px (labels included). |
 | `maxValue` | `number` | `max(dataY)` | Top of the scale. Values above it are clamped. |
-| `barRadius` | `number` | `25` | Radius of the bars' top corners. |
+| `horizontal` | `boolean` | `false` | Draw bars left to right. See [Horizontal bars](#recipes). |
+| `barRadius` | `number` | `25` | Radius of the bars' outer corners (top, or right when horizontal). |
 | `style` / `containerStyles` | `ViewStyle` | — | Styles for the container. `containerStyles` is kept for backwards compatibility. |
 | `labelStyle` | `TextStyle` | — | Style for the labels above bars. |
 | `xLabelStyle` | `TextStyle` | — | Style for the x-axis labels. |
+| `showYAxis` | `boolean` | `false` | Value axis with grid lines (left, or bottom when horizontal). |
+| `yTicks` | `number` | `4` | Target number of axis intervals (exact when `maxValue` is set). |
+| `formatYLabel` | `(value, index) => string` | `formatValue` | Formats axis labels. |
+| `yLabelStyle` | `TextStyle` | — | Style for the axis labels. |
+| `gridColor` | `string` | `'#e3e3e3'` | Color of the grid lines. |
+| `selectedIndex` | `number \| null` | — | Highlighted bar (controlled). The rest fade to `dimOpacity`. |
+| `showTooltip` | `boolean` | `false` | Tooltip on the selected bar. Makes bars tappable; uncontrolled unless `selectedIndex` is set. |
+| `formatTooltip` | `({ index, value, label, xLabel }) => string` | `"xLabel: value"` | Tooltip text. |
+| `tooltipStyle` / `tooltipTextStyle` | `ViewStyle` / `TextStyle` | — | Tooltip bubble and text styles. |
+| `dimOpacity` | `number` | `0.35` | Opacity of non-selected bars while one is selected. |
 | `animationDuration` | `number` | `300` | Duration in ms. |
 | `animationDelay` | `'random' \| 'stagger' \| 'none' \| number` | `'random'` | Delay before each bar starts. A number means *ms × bar index*. |
 | `easing` | `EasingFunction` | `Easing.out(Easing.cubic)` | Any function from React Native's `Easing`. |
@@ -111,7 +172,7 @@ If you don't pass `height`, the chart measures itself when its style has a `heig
 
 ### Accessibility
 
-Each bar exposes an accessibility label like `"Apr: $260"` (x-label + value label), and bars become buttons when `onBarPress` is set. Animations are disabled automatically when the user has "Reduce motion" enabled.
+Each bar exposes an accessibility label like `"Apr: $260"` (x-label + value label) and a `selected` accessibility state, and bars become buttons when `onBarPress` or `showTooltip` is set. Animations are disabled automatically when the user has "Reduce motion" enabled.
 
 ## Migrating from 0.0.x
 
@@ -128,9 +189,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list.
 
 ## Roadmap
 
-- Horizontal bars
 - Grouped and stacked bars
-- Y-axis with grid lines
 - Negative values (bars below a baseline)
 - Line chart
 
