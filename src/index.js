@@ -1,7 +1,5 @@
 import BarChart from './BarChart';
+import { computeBarHeights } from './layout';
 
-
-// without default
-export {
-    BarChart
-}
+export { BarChart, computeBarHeights };
+export default BarChart;
