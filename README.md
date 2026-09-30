@@ -1,107 +1,148 @@
-# react-native-animated-chart
+# react-native-animated-charts
 
-A React Native bar chart component animated fully on UI thread and with non external dependecies
+[![npm](https://img.shields.io/npm/v/react-native-animated-charts.svg)](https://www.npmjs.com/package/react-native-animated-charts)
+[![CI](https://github.com/nachourpi/react-native-animated-charts/actions/workflows/ci.yml/badge.svg)](https://github.com/nachourpi/react-native-animated-charts/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/react-native-animated-charts.svg)](LICENSE)
+
+An animated bar chart for React Native.
+
+- **Runs on the UI thread** — bars animate with `transform` + `useNativeDriver`, so the JS thread can be busy and the animation stays smooth.
+- **Zero dependencies** — just `react` and `react-native`. No SVG, no Reanimated, no Skia.
+- **Tiny** — under 10 kB packed.
+- **TypeScript types** included.
+- Works on iOS, Android and React Native Web.
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/demo.gif" width="454" height="660">
+  <img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/demo.gif" width="452" alt="Animated bar chart demo">
 </p>
 
 ## Installation
 
-Run `npm install react-native-animated-charts` in your project directory.
-
-## Usage
-
-This snippet would produce the output shown in the above gif
-
+```sh
+npm install react-native-animated-charts
+# or
+yarn add react-native-animated-charts
 ```
-import React, { Component } from 'react';
-import {View, Dimensions, StyleSheet} from 'react-native';
-import {BarChart} from 'react-native-animated-charts'
 
+Requires React Native `>= 0.64` and React `>= 17`. Nothing to link, no native code.
 
-let WIDTH = Dimensions.get('window').width;
-let HEIGHT = Dimensions.get('window').height;
+## Quick start
 
-export default class Test extends Component {
+```jsx
+import React, { useState } from 'react';
+import { Button, View } from 'react-native';
+import { BarChart } from 'react-native-animated-charts';
 
-    constructor() {
-        super()
+export default function SalesChart() {
+  const [data, setData] = useState([120, 340, 90, 260, 410, 180]);
 
-        this.state = {
-            dataY:[10,2,1.2,4.5,3],
-            labels:['10k','2k','1.2k','4.5k','3k']
-        }
-    }
-
-    recalculate = ()=>{
-        let values = Array.from({length: 5}, () => Math.round(10*Math.random() * 5)/10)
-        this.setState({
-            dataY:values,
-            labels: values.map(v=>(Math.round(v*10)/10)+'k')
-        })
-    }
-    render() {
-        return (
-                <View style={styles.container}>
-                    <BarChart 
-                        labels={this.state.labels} 
-                        dataY={this.state.dataY} 
-                        color={'#a7bd4f'} 
-                        height={HEIGHT * .6}
-                        containerStyles={styles.barChart}
-                    />
-                    <TouchableOpacity onPress={this.recalculate} style={styles.button}>
-                        <Text style={styles.buttonText}>Recalculate</Text>
-                    </TouchableOpacity>
-                </View>
-        );
-      }
+  return (
+    <View style={{ padding: 16 }}>
+      <BarChart
+        dataY={data}
+        xLabels={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']}
+        showValues
+        formatValue={(v) => `$${v}`}
+        color={['#4f7cbd', '#7fa7e0']}
+        barRadius={6}
+        height={240}
+        animationDelay="stagger"
+        onBarPress={({ xLabel, value }) => console.log(xLabel, value)}
+      />
+      <Button
+        title="Shuffle"
+        onPress={() => setData(data.map(() => Math.round(Math.random() * 500)))}
+      />
+    </View>
+  );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        alignItems:"center"
-    },
-    button: {
-        backgroundColor:"#a7bd4f",
-        marginTop:30,
-        width:WIDTH*.4,
-        height:40, 
-        borderRadius:30,
-        alignItems:"center",
-        justifyContent:"center"
-    },
-    buttonText: {
-        color:"white",
-        fontSize:18
-    },
-    barChart: {
-        backgroundColor:"transparent",
-        height:HEIGHT*.6,
-        width:WIDTH,
-        marginTop:20
-    },
-});
-
-
 ```
+
+Whenever `dataY` changes, every bar animates from its current height to the new one.
+
+## Recipes
+
+**Fill the available space (flex height)**
+
+```jsx
+<View style={{ flex: 1 }}>
+  <BarChart dataY={data} style={{ flex: 1 }} />
+</View>
+```
+
+If you don't pass `height`, the chart measures itself when its style has a `height` or `flex`; otherwise it defaults to 200 px.
+
+**Color by value**
+
+```jsx
+<BarChart
+  dataY={[95, 40, 72, 15]}
+  maxValue={100}
+  color={(v) => (v >= 70 ? '#3aa76d' : v >= 30 ? '#e0a526' : '#d9534f')}
+  showValues
+  formatValue={(v) => `${v}%`}
+/>
+```
+
+**Fixed scale** — pass `maxValue` so charts with different data share the same scale (e.g. percentages, or comparing two charts side by side).
 
 ## Props
 
-The barChart renders data passed by props:
-* `dataY`: An array containing numeric values to render bars on y-axis.
-* `labels`: An array of string labels to be shown above the bars .
-Other styling props:
-* `color`: A color for the bars.
-* `height`: A fixed height for the chart.
-* `containerStyles`: Styles for the barchart container View component.
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `dataY` | `number[]` | **required** | Values to plot. Negative or non-numeric values are drawn as `0`. |
+| `labels` | `string[]` | — | Text shown above each bar. Takes precedence over `showValues`. |
+| `xLabels` | `string[]` | — | Text shown under each bar (x-axis). |
+| `showValues` | `boolean` | `false` | Show `formatValue(value)` above bars when `labels` is not set. |
+| `formatValue` | `(value, index) => string` | `String` | Formats values for `showValues` and accessibility labels. |
+| `color` | `string \| string[] \| (value, index) => string` | `'red'` | One color, a palette cycled across bars, or a function. |
+| `height` | `number` | measured / `200` | Fixed height in px (labels included). |
+| `maxValue` | `number` | `max(dataY)` | Top of the scale. Values above it are clamped. |
+| `barRadius` | `number` | `25` | Radius of the bars' top corners. |
+| `style` / `containerStyles` | `ViewStyle` | — | Styles for the container. `containerStyles` is kept for backwards compatibility. |
+| `labelStyle` | `TextStyle` | — | Style for the labels above bars. |
+| `xLabelStyle` | `TextStyle` | — | Style for the x-axis labels. |
+| `animationDuration` | `number` | `300` | Duration in ms. |
+| `animationDelay` | `'random' \| 'stagger' \| 'none' \| number` | `'random'` | Delay before each bar starts. A number means *ms × bar index*. |
+| `easing` | `EasingFunction` | `Easing.out(Easing.cubic)` | Any function from React Native's `Easing`. |
+| `respectReduceMotion` | `boolean` | `true` | Skip animations when the OS "Reduce motion" setting is on. |
+| `onBarPress` | `({ index, value, label, xLabel }) => void` | — | Makes bars pressable. |
+| `testID` | `string` | `'bar-chart'` | Bars get `${testID}-bar-${index}`. |
 
-## Pending Tasks
+### Accessibility
 
-- [ ] Make property for filling x-axis labels.
-- [ ] Make the barchart compatible with flex heights, currently it only supports receiving a fixed height
+Each bar exposes an accessibility label like `"Apr: $260"` (x-label + value label), and bars become buttons when `onBarPress` is set. Animations are disabled automatically when the user has "Reduce motion" enabled.
 
-## Contributing
+## Migrating from 0.0.x
 
-This is project is still in beta at the moment, but is still very basic, so if you want to work on the above mention tasks, or you find a bug just open a PR or an issue and ping me!
+1.0 is a rewrite with the same core API, so most code keeps working unchanged.
+
+- **Peer dependencies** now accept modern versions (`react >= 17`, `react-native >= 0.64`). 0.0.x declared `react-native ^0.61`, which made `npm install` fail on current projects without `--legacy-peer-deps`.
+- `containerStyles` is **optional** now (it used to crash when missing) and is no longer mutated.
+- `height` is optional; the chart can size itself with flex.
+- Bars grow from zero on mount and then animate from their current height on updates.
+- Changes to `labels` or `color` are now rendered even if `dataY` is the same array.
+- Bars only round their top corners.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list.
+
+## Roadmap
+
+- Horizontal bars
+- Grouped and stacked bars
+- Y-axis with grid lines
+- Negative values (bars below a baseline)
+- Line chart
+
+Ideas and PRs are welcome — open an [issue](https://github.com/nachourpi/react-native-animated-charts/issues).
+
+## Development
+
+```sh
+npm install
+npm test
+```
+
+## License
+
+[MIT](LICENSE) © José Ignacio Urpi
