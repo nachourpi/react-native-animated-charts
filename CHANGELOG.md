@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0 — 2026-10-01
+
+### Added
+- `sort` (`'desc'` / `'asc'`): bars are ordered by value and slide to their new place, labels included, when the ranking changes ("bar chart race"). Categories are followed by `ids` (default `xLabels`); `maxBars` shows only the top N. Works vertically, horizontally and with `series` (by total).
+- `scrub`: drag along the bars to select the one under the finger. Only drags along the bars are taken, so parent ScrollViews keep scrolling.
+- `loading` / `skeletonColor`: pulsing placeholder bars; the data grows from them when it arrives. The chart is announced as busy meanwhile.
+
+### Fixed
+- Selecting a bar remounted the whole chart (1.2.0), so every bar grew again from zero.
+
 ## 1.2.0 — 2026-09-30
 
 ### Added

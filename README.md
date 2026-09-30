@@ -8,7 +8,7 @@ An animated bar chart for React Native.
 
 - **Runs on the UI thread** — bars animate with `transform` + `useNativeDriver`, so the JS thread can be busy and the animation stays smooth.
 - **Zero dependencies** — just `react` and `react-native`. No SVG, no Reanimated, no Skia.
-- **Small** — about 20 kB packed (docs included), no build step.
+- **Small** — about 24 kB packed (docs included), no build step.
 - **TypeScript types** included.
 - Works on iOS, Android and React Native Web.
 
@@ -132,6 +132,37 @@ Each category gets one bar per series, and a legend is shown when the series hav
 
 Positive values stack upwards and negative values downwards; `showValues` shows the total of each stack.
 
+**Bar chart race**
+
+```jsx
+<BarChart
+  horizontal
+  sort="desc"
+  maxBars={10}
+  dataY={frame.values}
+  xLabels={frame.languages}
+  showValues
+/>
+```
+
+With `sort`, bars are ordered by value and slide to their new place (with their labels) whenever the ranking changes, while their lengths animate too. Categories are followed across updates by `ids` (or `xLabels`), so the data can come in any order. `maxBars` shows only the top N: the rest slide in and out from the edge. Update the data about every `animationDuration` ms for a continuous race. Works with vertical charts and `series` (sorted by total) too.
+
+**Scrub**
+
+```jsx
+<BarChart dataY={data} xLabels={months} scrub showTooltip onSelectionChange={() => Haptics.selectionAsync()} />
+```
+
+Drag along the bars and the selection (and tooltip) follows the finger, like in finance apps; taps still work. Only drags along the bars are taken, so a parent `ScrollView` keeps scrolling. The chart has no dependencies, so haptics are up to you: hook them to `onSelectionChange` (the example uses `expo-haptics`).
+
+**Loading state**
+
+```jsx
+<BarChart loading={!data} dataY={data ?? []} xLabels={months} />
+```
+
+While `loading`, the chart shows pulsing placeholder bars (one per `xLabels` item, or 6) in `skeletonColor`, with no labels or interaction. When `loading` turns false, the bars grow from the placeholders to the real values.
+
 **Y axis with grid lines**
 
 ```jsx
@@ -211,6 +242,12 @@ const [selected, setSelected] = useState(null);
 | `formatTooltip` | `({ index, value, values, label, xLabel }) => string` | `"xLabel: value"` | Tooltip text. May contain `\n`. |
 | `tooltipStyle` / `tooltipTextStyle` | `ViewStyle` / `TextStyle` | — | Tooltip bubble and text styles. |
 | `dimOpacity` | `number` | `0.35` | Opacity of non-selected bars while one is selected. |
+| `sort` | `'desc' \| 'asc'` | — | Order bars by value; they slide to their new place when the ranking changes. |
+| `ids` | `(string \| number)[]` | `xLabels` | Identity of each category for `sort`. |
+| `maxBars` | `number` | — | With `sort`, show only the first N bars. |
+| `scrub` | `boolean` | `false` | Drag along the bars to select the one under the finger. |
+| `loading` | `boolean` | `false` | Pulsing placeholder bars; the data grows from them. |
+| `skeletonColor` | `string` | `'#e6e6e9'` | Color of the placeholder bars. |
 | `animationDuration` | `number` | `300` | Duration in ms. |
 | `animationDelay` | `'random' \| 'stagger' \| 'none' \| number` | `'random'` | Delay before each bar starts. A number means *ms × bar index*. |
 | `easing` | `EasingFunction` | `Easing.out(Easing.cubic)` | Any function from React Native's `Easing`. |
@@ -220,7 +257,7 @@ const [selected, setSelected] = useState(null);
 
 ### Accessibility
 
-Each bar exposes an accessibility label like `"Apr: $260"` (x-label + value label; with `series`, `"Q1: Sales 120, Costs 80"`) and a `selected` accessibility state, and bars become buttons when `onBarPress`, `onSelectionChange` or `showTooltip` is set. Animations are disabled automatically when the user has "Reduce motion" enabled.
+Each bar exposes an accessibility label like `"Apr: $260"` (x-label + value label; with `series`, `"Q1: Sales 120, Costs 80"`) and a `selected` accessibility state, and bars become buttons when `onBarPress`, `onSelectionChange`, `showTooltip` or `scrub` is set. While `loading`, the chart is announced as busy. Animations are disabled automatically when the user has "Reduce motion" enabled.
 
 ## Migrating from 0.0.x
 
