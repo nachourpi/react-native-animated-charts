@@ -1,6 +1,6 @@
 {
   "name": "react-native-animated-charts",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Animated bar chart for React Native. Animations run on the native UI thread, zero dependencies, TypeScript types included.",
   "main": "src/index.js",
   "react-native": "src/index.js",
