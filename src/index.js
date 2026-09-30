@@ -1,5 +1,5 @@
 import BarChart from './BarChart';
-import { computeBarHeights } from './layout';
+import { computeBarHeights, computeTicks } from './layout';
 
-export { BarChart, computeBarHeights };
+export { BarChart, computeBarHeights, computeTicks };
 export default BarChart;
