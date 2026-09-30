@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Releases are published from GitHub Actions with npm trusted publishing (OIDC) and provenance.
+
 ## 1.0.0 — 2026-09-30
 
 Rewrite with hooks. The core API (`dataY`, `labels`, `color`, `height`, `containerStyles`) is unchanged.

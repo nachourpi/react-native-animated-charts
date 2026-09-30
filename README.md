@@ -143,6 +143,19 @@ npm install
 npm test
 ```
 
+### Releasing
+
+Releases are published to npm by GitHub Actions ([`publish.yml`](.github/workflows/publish.yml)) using
+[trusted publishing](https://docs.npmjs.com/trusted-publishers), so there is no npm token stored in the repo and
+every version ships with a signed [provenance](https://docs.npmjs.com/generating-provenance-statements) statement.
+
+1. Update `CHANGELOG.md`.
+2. `npm version <patch|minor|major>` (bumps `package.json` and creates the `vX.Y.Z` tag).
+3. `git push --follow-tags`.
+
+The workflow checks that the tag matches `package.json`, runs the tests and publishes.
+Pre-release versions (e.g. `1.2.0-beta.0`) are published under the `next` dist-tag.
+
 ## License
 
 [MIT](LICENSE) © José Ignacio Urpi

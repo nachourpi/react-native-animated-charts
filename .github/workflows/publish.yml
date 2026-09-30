@@ -1,0 +1,52 @@
+name: Publish to npm
+
+# Publishes when a version tag (vX.Y.Z) is pushed.
+# Auth uses npm trusted publishing (OIDC): no NPM_TOKEN secret, no OTP.
+# The package must have this repo + workflow configured as its trusted
+# publisher on npmjs.com (Settings -> Trusted publishing).
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+  id-token: write # lets the job request the OIDC token npm exchanges for a publish credential
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted publishing requires npm >= 11.5.1.
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Check tag matches package.json version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Publish (with provenance)
+        run: |
+          # Pre-releases (1.2.0-beta.0) go to the "next" dist-tag so they never become "latest".
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then TAG=next; else TAG=latest; fi
+          npm publish --provenance --access public --tag "$TAG"
