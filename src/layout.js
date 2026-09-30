@@ -254,3 +254,38 @@ export function segmentTiming(prev, next, side, duration, delay) {
   const half = Math.round(duration / 2);
   return next[side] > 0 ? { duration: half, delay: delay + half } : { duration: half, delay };
 }
+
+/** Relative heights (0–1) of the placeholder bars shown while `loading`. */
+export const SKELETON_PATTERN = [0.55, 0.8, 0.45, 0.95, 0.65, 0.35, 0.75, 0.5];
+
+/**
+ * Category indexes in display order for `sort`: by metric, 'desc' (largest first) or 'asc'.
+ * Stable: ties keep their original order.
+ */
+export function computeOrder(metrics, direction = 'desc') {
+  const dir = direction === 'asc' ? 1 : -1;
+  return metrics
+    .map((m, i) => [toNumber(m), i])
+    .sort((a, b) => (a[0] === b[0] ? a[1] - b[1] : dir * (a[0] - b[0])))
+    .map(([, i]) => i);
+}
+
+/** Stable React keys from ids that may repeat or be missing (repeats get a `#n` suffix). */
+export function uniqueKeys(ids) {
+  const seen = {};
+  return ids.map((id, i) => {
+    const base = id == null || id === '' ? `#${i}` : String(id);
+    seen[base] = (seen[base] || 0) + 1;
+    return seen[base] > 1 ? `${base}#${seen[base]}` : base;
+  });
+}
+
+/**
+ * Bar slot under a finger position along the category axis (px from the plot start),
+ * clamped to [0, count - 1]. `offset` is the empty space before the first slot.
+ */
+export function scrubIndex(position, { offset = 0, pitch, count }) {
+  if (!(count > 0) || !(pitch > 0)) return null;
+  const i = Math.floor((position - offset) / pitch);
+  return Math.min(count - 1, Math.max(0, i));
+}

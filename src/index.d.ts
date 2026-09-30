@@ -105,6 +105,30 @@ export interface BarChartProps {
   tooltipTextStyle?: StyleProp<TextStyle>;
   /** Opacity of the non-selected bars while one is selected. Default 0.35. */
   dimOpacity?: number;
+  /**
+   * Order bars by value (the category total with `series`). When the ranking changes,
+   * bars and their labels slide to their new place ("bar chart race").
+   */
+  sort?: 'desc' | 'asc';
+  /**
+   * Identity of each category, used to follow bars across updates when `sort` is set.
+   * Defaults to `xLabels`, then to the index.
+   */
+  ids?: Array<string | number>;
+  /** With `sort`: show only the first N bars; the rest slide in and out from the edge. */
+  maxBars?: number;
+  /**
+   * Drag along the bars to select the one under the finger (with its tooltip).
+   * Only drags along the category axis are taken, so a parent ScrollView keeps scrolling.
+   */
+  scrub?: boolean;
+  /**
+   * Show pulsing placeholder bars (one per known value / xLabel, else 6). When it turns
+   * false, the bars grow from the placeholders to the data.
+   */
+  loading?: boolean;
+  /** Color of the placeholder bars. Default `'#e6e6e9'`. */
+  skeletonColor?: string;
   /** Animation duration in ms. Default 300. */
   animationDuration?: number;
   /** `'random'` (default, 0.0.x behaviour), `'stagger'`, `'none'`, or ms per bar index. */

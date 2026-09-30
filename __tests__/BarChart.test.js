@@ -1,7 +1,8 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { render, fireEvent, screen } from '@testing-library/react-native';
+import { render, fireEvent, screen, act } from '@testing-library/react-native';
 import { BarChart } from '../src';
+import { computeBarMargin } from '../src/layout';
 
 jest.useFakeTimers();
 
@@ -358,5 +359,172 @@ describe('horizontal auto height', () => {
     expect(heightOf()).toBe(90);
     await screen.rerender(<BarChart dataY={[1, 2, 3]} />);
     expect(heightOf()).toBe(200);
+  });
+});
+
+describe('selection keeps bars mounted', () => {
+  it('selecting and clearing never remounts the bars', async () => {
+    await render(<BarChart dataY={[4, 8]} showTooltip />);
+    const before = screen.getByTestId('bar-chart-bar-0');
+    await fireEvent.press(screen.getByLabelText('8'));
+    expect(screen.getByTestId('bar-chart-bar-0')).toBe(before);
+    await fireEvent.press(screen.getByTestId('bar-chart'));
+    expect(screen.getByTestId('bar-chart-bar-0')).toBe(before);
+  });
+});
+
+describe('loading skeleton', () => {
+  it('shows placeholder bars without labels, axis or interaction', async () => {
+    await render(<BarChart loading dataY={[]} xLabels={['a', 'b', 'c']} showValues showYAxis showTooltip skeletonColor="#ddd" />);
+    expect(styleOf('bar-chart-bar-2').backgroundColor).toBe('#ddd');
+    expect(screen.queryByTestId('bar-chart-bar-3')).toBeNull();
+    expect(screen.queryByTestId('bar-chart-y-axis')).toBeNull();
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    const root = screen.getByTestId('bar-chart');
+    expect(root.props.accessibilityLabel).toBe('Loading chart');
+    expect(root.props.accessibilityState).toEqual({ busy: true });
+  });
+
+  it('defaults to 6 placeholders, or one per known value', async () => {
+    await render(<BarChart loading />);
+    expect(screen.getByTestId('bar-chart-bar-5')).toBeTruthy();
+    expect(screen.queryByTestId('bar-chart-bar-6')).toBeNull();
+    await screen.rerender(<BarChart loading dataY={[1, 2]} />);
+    expect(screen.queryByTestId('bar-chart-bar-2')).toBeNull();
+  });
+
+  it('bars grow from the placeholders when the data arrives', async () => {
+    await render(<BarChart loading dataY={[]} xLabels={['a', 'b']} color="#123" />);
+    const placeholder = screen.getByTestId('bar-chart-bar-0');
+    await screen.rerender(<BarChart dataY={[3, 7]} xLabels={['a', 'b']} color="#123" showValues />);
+    expect(screen.getByTestId('bar-chart-bar-0')).toBe(placeholder); // same bar, animates from its height
+    expect(styleOf('bar-chart-bar-0').backgroundColor).toBe('#123');
+    expect(screen.getByText('7')).toBeTruthy();
+  });
+
+  it('keeps the legend for series while loading', async () => {
+    await render(<BarChart loading series={[{ name: 'Sales', data: [] }, { name: 'Costs', data: [] }]} />);
+    expect(screen.getByText('Costs')).toBeTruthy();
+  });
+});
+
+describe('sort (race)', () => {
+  const translate = (id) => styleOf(id).transform[0];
+
+  it('places horizontal rows by rank and labels with them', async () => {
+    await render(<BarChart horizontal sort="desc" dataY={[3, 9, 1]} xLabels={['a', 'b', 'c']} height={120} />);
+    await layoutTrack(300);
+    // row slot = 120 / 3 = 40: b (9) first, a second, c last
+    expect(translate('bar-chart-slide-1')).toEqual({ translateY: 0 });
+    expect(translate('bar-chart-slide-0')).toEqual({ translateY: 40 });
+    expect(translate('bar-chart-slide-2')).toEqual({ translateY: 80 });
+    expect(screen.getAllByText('b').length).toBe(2); // sizer copy + sliding label
+  });
+
+  it('ascending order and keys by id keep bars mounted across reorders', async () => {
+    await render(<BarChart horizontal sort="asc" dataY={[3, 9]} xLabels={['a', 'b']} height={80} />);
+    await layoutTrack(300);
+    expect(translate('bar-chart-slide-0')).toEqual({ translateY: 0 });
+    const barA = screen.getByTestId('bar-chart-bar-0');
+    await screen.rerender(<BarChart horizontal sort="asc" dataY={[12, 9]} xLabels={['a', 'b']} height={80} />);
+    expect(screen.getByTestId('bar-chart-bar-0')).toBe(barA);
+  });
+
+  it('maxBars shows the top N and sizes the chart for them', async () => {
+    await render(<BarChart horizontal sort="desc" maxBars={2} dataY={[5, 1, 9, 7]} xLabels={['a', 'b', 'c', 'd']} />);
+    expect(StyleSheet.flatten(screen.getByTestId('bar-chart').props.style).height).toBe(2 * 32);
+    await layoutTrack(300);
+    expect(translate('bar-chart-slide-1')).toEqual({ translateY: 3 * 32 }); // ranked 4th: parked below the visible rows
+  });
+
+  it('vertical columns wait for the plot width, then get px positions', async () => {
+    await render(<BarChart sort="desc" dataY={[1, 4]} xLabels={['x', 'y']} />);
+    expect(screen.queryByTestId('bar-chart-slide-0')).toBeNull();
+    await layoutTrack(200);
+    const pad = (computeBarMargin(2) / 100) * 200;
+    const pitch = (200 - 2 * pad) / 2;
+    expect(translate('bar-chart-slide-0')).toEqual({ translateX: pitch }); // 1 ranks second
+    expect(styleOf('bar-chart-slide-0')).toEqual(expect.objectContaining({ left: 2 * pad, width: pitch - 2 * pad }));
+  });
+
+  it('ids override xLabels as identity', async () => {
+    await render(<BarChart horizontal sort="desc" dataY={[2, 1]} ids={['k1', 'k2']} xLabels={['same', 'same']} height={80} />);
+    await layoutTrack(300);
+    expect(screen.getAllByText('same').length).toBe(4);
+  });
+
+  it('while loading, keeps placeholders in their original order and respects maxBars', async () => {
+    await render(<BarChart loading sort="desc" maxBars={2} horizontal dataY={[]} xLabels={['a', 'b', 'c']} />);
+    expect(StyleSheet.flatten(screen.getByTestId('bar-chart').props.style).height).toBe(2 * 32);
+    await layoutTrack(300);
+    expect(translate('bar-chart-slide-2')).toEqual({ translateY: 2 * 32 });
+  });
+
+  it('data grows from the same placeholders when loading ends', async () => {
+    await render(<BarChart loading sort="desc" horizontal dataY={[]} xLabels={['a', 'b']} height={80} />);
+    await layoutTrack(300);
+    const placeholder = screen.getByTestId('bar-chart-bar-1');
+    await screen.rerender(<BarChart sort="desc" horizontal dataY={[1, 5]} xLabels={['a', 'b']} height={80} />);
+    expect(screen.getByTestId('bar-chart-bar-1')).toBe(placeholder);
+  });
+});
+
+describe('scrub', () => {
+  const plot = () => screen.getByTestId('bar-chart-plot').props;
+  const ev = (pageX, pageY = 0) => ({ nativeEvent: { pageX, pageY } });
+  const drag = async (points) => {
+    const p = plot();
+    p.onStartShouldSetResponderCapture(ev(points[0][0], points[0][1]));
+    const claims = p.onMoveShouldSetResponderCapture(ev(points[1][0], points[1][1]));
+    if (claims) {
+      await act(async () => p.onResponderGrant(ev(points[1][0], points[1][1])));
+      for (const [x, y] of points.slice(2)) {
+        await act(async () => plot().onResponderMove(ev(x, y)));
+      }
+      await act(async () => plot().onResponderRelease(ev(0, 0)));
+    }
+    return claims;
+  };
+
+  it('selects the bar under the finger while dragging along the bars', async () => {
+    const onSelectionChange = jest.fn();
+    await render(<BarChart dataY={[1, 2, 3]} scrub onSelectionChange={onSelectionChange} />);
+    await layoutTrack(300);
+    const pad = (computeBarMargin(3) / 100) * 300;
+    const pitch = (300 - 2 * pad) / 3;
+    const claimed = await drag([[pad + 5, 0], [pad + 20, 2], [pad + pitch + 5, 3], [pad + 2 * pitch + 5, 1], [pad + 2 * pitch + 9, 1]]);
+    expect(claimed).toBe(true);
+    expect(onSelectionChange.mock.calls.map((c) => c[0])).toEqual([0, 1, 2]);
+  });
+
+  it('shows the tooltip of the scrubbed bar (uncontrolled)', async () => {
+    await render(<BarChart dataY={[1, 2, 3]} scrub showTooltip />);
+    await layoutTrack(300);
+    await drag([[10, 0], [30, 0], [290, 0]]);
+    expect(screen.getByTestId('bar-chart-bar-2-tooltip')).toBeTruthy();
+  });
+
+  it('lets vertical drags through so a parent ScrollView can scroll', async () => {
+    await render(<BarChart dataY={[1, 2, 3]} scrub />);
+    await layoutTrack(300);
+    expect(await drag([[100, 0], [104, 40]])).toBe(false);
+  });
+
+  it('scrubs rows vertically in horizontal charts, mapped through the sort order', async () => {
+    const onSelectionChange = jest.fn();
+    await render(
+      <BarChart horizontal sort="desc" dataY={[3, 9, 1]} xLabels={['a', 'b', 'c']} height={120} scrub onSelectionChange={onSelectionChange} />
+    );
+    await layoutTrack(300);
+    expect(await drag([[50, 5], [52, 20], [52, 50], [52, 100]])).toBe(true);
+    // rows top to bottom: b (1), a (0), c (2)
+    expect(onSelectionChange.mock.calls.map((c) => c[0])).toEqual([1, 0, 2]);
+  });
+
+  it('is off without the prop and while loading', async () => {
+    await render(<BarChart dataY={[1, 2]} />);
+    expect(plot().onMoveShouldSetResponderCapture).toBeUndefined();
+    await screen.rerender(<BarChart dataY={[1, 2]} scrub loading />);
+    expect(plot().onMoveShouldSetResponderCapture).toBeUndefined();
   });
 });

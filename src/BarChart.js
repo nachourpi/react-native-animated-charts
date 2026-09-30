@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import BarSlot from './BarSlot';
 import {
   DEFAULT_HEIGHT,
   DEFAULT_PALETTE,
   H_AXIS_SPACE,
+  SKELETON_PATTERN,
   H_VALUE_LABEL_SPACE,
   VALUE_LABEL_SPACE,
   X_LABEL_SPACE,
@@ -13,13 +14,16 @@ import {
   computeBarMargin,
   computeBounds,
   computeDelay,
+  computeOrder,
   computeRowLayout,
   computeSlot,
   computeTicks,
   normalizeSeries,
   resolveColor,
   resolveSelectedIndex,
+  scrubIndex,
   tooltipPlacement,
+  uniqueKeys,
 } from './layout';
 
 const EMPTY = [];
@@ -85,6 +89,12 @@ export default function BarChart({
   easing,
   respectReduceMotion = true,
   onBarPress,
+  sort,
+  ids,
+  maxBars,
+  scrub = false,
+  loading = false,
+  skeletonColor = '#e6e6e9',
   testID = 'bar-chart',
 }) {
   const [measuredHeight, setMeasuredHeight] = useState(null);
@@ -94,27 +104,75 @@ export default function BarChart({
   const reduceMotion = useReduceMotion(respectReduceMotion);
 
   // --- data -----------------------------------------------------------------
-  const multi = Array.isArray(series) && series.length > 0;
-  const { list, count, values } = useMemo(() => normalizeSeries(multi ? series : null, dataY), [multi, series, dataY]);
+  const hasSeries = Array.isArray(series) && series.length > 0;
+  const hasXLabels = Array.isArray(xLabels) && xLabels.length > 0;
+  const norm = useMemo(() => normalizeSeries(hasSeries ? series : null, dataY), [hasSeries, series, dataY]);
+  // While loading, placeholder bars stand in for the data (one per known category, else 6).
+  const skeletonCount = norm.count || (hasXLabels ? xLabels.length : 6);
+  const skeleton = useMemo(
+    () =>
+      loading
+        ? { list: [{}], count: skeletonCount, values: Array.from({ length: skeletonCount }, (_, i) => [SKELETON_PATTERN[i % SKELETON_PATTERN.length]]) }
+        : null,
+    [loading, skeletonCount]
+  );
+  const { list, count, values } = skeleton || norm;
+  const multi = hasSeries && !loading;
   const k = list.length;
   const stack = multi && stacked;
-  const legendOn = multi && (showLegend != null ? showLegend : list.some((s) => s && present(s.name)));
-  const hasXLabels = Array.isArray(xLabels) && xLabels.length > 0;
-  const seriesName = (s) => (list[s] && present(list[s].name) ? list[s].name : `Series ${s + 1}`);
-  const rawValue = (i, s) => (multi ? values[i][s] : dataY[i]);
+  const legendOn = hasSeries && (showLegend != null ? showLegend : norm.list.some((s) => s && present(s.name)));
+  const seriesName = (s) => (norm.list[s] && present(norm.list[s].name) ? norm.list[s].name : `Series ${s + 1}`);
 
-  const seriesColor = (s, value, i) => {
-    if (!multi) return resolveColor(color, value, i);
-    if (list[s] && list[s].color != null) return resolveColor(list[s].color, value, i);
+  const colorOfSeries = (s, value, i) => {
+    const item = norm.list[s];
+    if (item && item.color != null) return resolveColor(item.color, value, i);
     const palette = Array.isArray(color) && color.length ? color : DEFAULT_PALETTE;
     return palette[s % palette.length];
   };
+  const seriesColor = (s, value, i) => {
+    if (loading) return skeletonColor;
+    if (!multi) return resolveColor(color, value, i);
+    return colorOfSeries(s, value, i);
+  };
+
+  // --- ordering (sort / race) ---------------------------------------------------
+  // Sorting stays on while loading (placeholders in their original order, same keys), so the
+  // data grows from the placeholders and then slides into its ranking.
+  const sortOn = sort === 'asc' || sort === 'desc';
+  const visibleCount = sortOn && maxBars > 0 ? Math.min(count, Math.floor(maxBars)) : count;
+  const keys = useMemo(
+    () =>
+      sortOn
+        ? uniqueKeys(values.map((_, i) => (ids && ids[i] != null ? ids[i] : hasXLabels && xLabels[i] != null ? xLabels[i] : i)))
+        : null,
+    [sortOn, values, ids, hasXLabels, xLabels]
+  );
+  const order = useMemo(
+    () =>
+      sortOn
+        ? loading
+          ? values.map((_, i) => i)
+          : computeOrder(values.map((v) => v.reduce((a, x) => a + x, 0)), sort)
+        : null,
+    [sortOn, loading, values, sort]
+  );
+  const rank = useMemo(() => {
+    if (!order) return null;
+    const r = [];
+    order.forEach((idx, pos) => {
+      r[idx] = pos;
+    });
+    return r;
+  }, [order]);
 
   // --- scale ----------------------------------------------------------------
-  const bounds = useMemo(() => computeBounds(values, { stacked: stack, maxValue, minValue }), [values, stack, maxValue, minValue]);
+  const bounds = useMemo(
+    () => (loading ? { lo: 0, hi: 1 } : computeBounds(values, { stacked: stack, maxValue, minValue })),
+    [loading, values, stack, maxValue, minValue]
+  );
   const ticks = useMemo(
-    () => (showYAxis ? computeTicks([bounds.lo, bounds.hi], yTicks, maxValue, minValue) : null),
-    [showYAxis, bounds, yTicks, maxValue, minValue]
+    () => (showYAxis && !loading ? computeTicks([bounds.lo, bounds.hi], yTicks, maxValue, minValue) : null),
+    [showYAxis, loading, bounds, yTicks, maxValue, minValue]
   );
   const lo = ticks ? ticks[0] : bounds.lo;
   const hi = ticks ? ticks[ticks.length - 1] : bounds.hi;
@@ -123,7 +181,8 @@ export default function BarChart({
 
   // --- selection --------------------------------------------------------------
   const selected = resolveSelectedIndex(selectedIndex, internalSelected, count);
-  const selectable = showTooltip || !!onSelectionChange;
+  const scrubOn = scrub && !loading && count > 0;
+  const selectable = !loading && (showTooltip || !!onSelectionChange || scrub);
   const changeSelection = (next) => {
     if (selectedIndex === undefined) setInternalSelected(next);
     if (onSelectionChange) onSelectionChange(next);
@@ -136,7 +195,7 @@ export default function BarChart({
   const legendH = legendOn ? (legendHeight != null ? legendHeight : LEGEND_ESTIMATE) : 0;
   const axisH = horizontal && showYAxis ? H_AXIS_SPACE : 0;
   const fallbackHeight = horizontal
-    ? computeAutoHeight(count, { seriesCount: k, stacked: stack, extra: axisH + legendH })
+    ? computeAutoHeight(visibleCount, { seriesCount: k, stacked: stack, extra: axisH + legendH })
     : DEFAULT_HEIGHT;
   // Priority: `height` prop > measured layout (flex / style height) > default (auto for horizontal).
   const totalHeight =
@@ -159,7 +218,7 @@ export default function BarChart({
   }, []);
 
   // --- geometry ---------------------------------------------------------------
-  const hasEndLabels = !!labels || showValues || showTooltip;
+  const hasEndLabels = !loading && (!!labels || showValues || showTooltip);
   let geometry = null;
   let rowsHeight = 0;
   let L = 0;
@@ -170,7 +229,7 @@ export default function BarChart({
       const labelRight = side;
       const labelLeft = hasNeg ? side : 0;
       rowsHeight = Math.max(0, chartHeight - axisH);
-      const row = computeRowLayout(count, rowsHeight);
+      const row = computeRowLayout(visibleCount, rowsHeight);
       L = trackWidth == null ? 0 : Math.max(0, trackWidth - labelLeft - labelRight);
       const N = hi - lo > 0 ? Math.round((L * -lo) / (hi - lo)) : 0;
       geometry = { labelTop: 0, labelBottom: 0, labelLeft, labelRight, P: L - N, N, thickness: row.thickness, margin: row.margin };
@@ -179,7 +238,7 @@ export default function BarChart({
       const labelBottom = hasNeg ? VALUE_LABEL_SPACE : 0;
       L = Math.max(0, chartHeight - labelTop - labelBottom - (hasXLabels ? X_LABEL_SPACE : 0));
       const N = hi - lo > 0 ? Math.round((L * -lo) / (hi - lo)) : 0;
-      geometry = { labelTop, labelBottom, labelLeft: 0, labelRight: 0, P: L - N, N, margin: computeBarMargin(count) };
+      geometry = { labelTop, labelBottom, labelLeft: 0, labelRight: 0, P: L - N, N, margin: computeBarMargin(visibleCount) };
     }
   }
 
@@ -193,22 +252,24 @@ export default function BarChart({
   );
 
   // --- slots ------------------------------------------------------------------
-  const renderSlot = (slot, i) => {
+  const renderSlot = (slot, i, geo = geometry) => {
     const vals = values[i];
     const xl = hasXLabels ? xLabels[i] : undefined;
     const value = multi ? slot.total : dataY[i];
-    const fixedLabel = labels && labels[i] != null ? labels[i] : null;
+    const fixedLabel = !loading && labels && labels[i] != null ? labels[i] : null;
     const { anchor } = slot;
 
     // Value labels: per bar when grouped with showValues, otherwise one per slot on the anchor.
     const slotLabels = vals.map(() => null);
     if (fixedLabel != null) slotLabels[anchor.series] = { side: anchor.side, text: fixedLabel };
-    else if (showValues && multi && !stack) {
+    else if (loading) {
+      // placeholders carry no labels
+    } else if (showValues && multi && !stack) {
       vals.forEach((v, s) => {
         slotLabels[s] = { side: v < 0 ? 'neg' : 'pos', text: formatValue(v, i, s) };
       });
     } else if (showValues && k) slotLabels[anchor.series] = { side: anchor.side, text: formatValue(value, i) };
-    const labelText = fixedLabel != null ? fixedLabel : showValues && (!multi || stack) ? formatValue(value, i) : null;
+    const labelText = fixedLabel != null ? fixedLabel : !loading && showValues && (!multi || stack) ? formatValue(value, i) : null;
 
     const event = { index: i, value, values: vals.slice(), label: labelText, xLabel: xl };
     const isSelected = selected === i;
@@ -223,8 +284,8 @@ export default function BarChart({
         ? tooltipPlacement({
             horizontal,
             length: anchor.length,
-            regionLength: anchor.side === 'pos' ? geometry.P : geometry.N,
-            extraSpace: anchor.side === 'pos' ? geometry.labelTop : geometry.labelBottom + (hasXLabels ? X_LABEL_SPACE : 0),
+            regionLength: anchor.side === 'pos' ? geo.P : geo.N,
+            extraSpace: anchor.side === 'pos' ? geo.labelTop : geo.labelBottom + (hasXLabels ? X_LABEL_SPACE : 0),
             lines: tooltip.split('\n').length,
           })
         : null;
@@ -235,7 +296,7 @@ export default function BarChart({
         ? labelText
         : formatValue(value, i);
     const accessibilityLabel = [xl, multi && fixedLabel != null ? fixedLabel : a11yValue].filter(present).join(': ');
-    const pressable = !!onBarPress || selectable;
+    const pressable = !loading && (!!onBarPress || selectable);
 
     return (
       <BarSlot
@@ -247,7 +308,7 @@ export default function BarChart({
         }
         horizontal={horizontal}
         stacked={stack}
-        geometry={geometry}
+        geometry={geo}
         bars={slot.bars}
         colors={vals.map((v, s) => seriesColor(s, multi ? v : dataY[i], i))}
         labels={slotLabels}
@@ -263,7 +324,7 @@ export default function BarChart({
         dimOpacity={dimOpacity}
         selected={isSelected}
         labelStyle={labelStyle}
-        accessibilityLabel={accessibilityLabel}
+        accessibilityLabel={loading ? undefined : accessibilityLabel}
         onPress={
           pressable
             ? () => {
@@ -275,6 +336,117 @@ export default function BarChart({
       />
     );
   };
+
+  // --- category positions (sort) ----------------------------------------------
+  // Slot pitch along the category axis: rows for horizontal, columns (from the measured
+  // plot width) for vertical. `pad` is the empty space before the first slot.
+  const row = geometry && horizontal ? computeRowLayout(visibleCount, rowsHeight) : null;
+  const pad = !horizontal && geometry && trackWidth != null ? (geometry.margin / 100) * trackWidth : 0;
+  const pitch = horizontal
+    ? row && row.slot
+    : trackWidth != null && visibleCount > 0
+      ? (trackWidth - 2 * pad) / visibleCount
+      : null;
+
+  // One position value per category key, shared by its bar and its label so both slide together.
+  const positions = useRef(new Map()).current;
+  const canPlace = sortOn && pitch != null && (!horizontal || trackWidth != null);
+  if (canPlace) {
+    keys.forEach((key, i) => {
+      if (!positions.has(key)) positions.set(key, new Animated.Value(rank[i] * pitch));
+    });
+  }
+  const placeSignature = canPlace ? keys.map((key, i) => `${key}:${rank[i] * pitch}`).join('|') : '';
+  useEffect(() => {
+    if (!canPlace) return undefined;
+    const live = new Set(keys);
+    Array.from(positions.keys()).forEach((key) => {
+      if (!live.has(key)) positions.delete(key);
+    });
+    const anims = keys.map((key, i) =>
+      Animated.timing(positions.get(key), {
+        toValue: rank[i] * pitch,
+        duration,
+        easing: easing || Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      })
+    );
+    anims.forEach((a) => a.start());
+    return () => anims.forEach((a) => a.stop());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeSignature, duration]);
+  const slide = (key) => (horizontal ? [{ translateY: positions.get(key) }] : [{ translateX: positions.get(key) }]);
+
+  // --- scrub ------------------------------------------------------------------------
+  const plotRef = useRef(null);
+  const scrubState = useRef({ start: null, origin: { x: 0, y: 0 }, last: null, index: undefined }).current;
+  const scrubTo = (ne) => {
+    scrubState.last = { pageX: ne.pageX, pageY: ne.pageY };
+    const along = horizontal ? ne.pageY - scrubState.origin.y : ne.pageX - scrubState.origin.x;
+    const r = scrubIndex(along, { offset: horizontal ? 0 : pad, pitch, count: visibleCount });
+    if (r == null) return;
+    const i = order ? order[r] : r;
+    if (i === scrubState.index) return;
+    scrubState.index = i;
+    if (i !== selected) changeSelection(i);
+  };
+  const scrubProps = scrubOn
+    ? {
+        ref: plotRef,
+        onStartShouldSetResponderCapture: (e) => {
+          scrubState.start = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+          return false;
+        },
+        // Take over only for drags along the category axis, so a parent ScrollView still scrolls.
+        onMoveShouldSetResponderCapture: (e) => {
+          const st = scrubState.start;
+          if (!st) return false;
+          const dx = Math.abs(e.nativeEvent.pageX - st.x);
+          const dy = Math.abs(e.nativeEvent.pageY - st.y);
+          const along = horizontal ? dy : dx;
+          return along > 6 && along > (horizontal ? dx : dy);
+        },
+        onResponderGrant: (e) => {
+          scrubState.index = undefined;
+          const node = plotRef.current;
+          if (node && typeof node.measure === 'function') {
+            node.measure((x, y, w, h, pageX, pageY) => {
+              if (typeof pageX !== 'number') return;
+              scrubState.origin = { x: pageX, y: pageY };
+              if (scrubState.last) scrubTo(scrubState.last);
+            });
+          }
+          scrubTo(e.nativeEvent);
+        },
+        onResponderMove: (e) => scrubTo(e.nativeEvent),
+        onResponderTerminationRequest: () => false,
+        onResponderRelease: () => {
+          scrubState.start = null;
+        },
+        onResponderTerminate: () => {
+          scrubState.start = null;
+        },
+      }
+    : null;
+
+  // --- loading pulse ------------------------------------------------------------------
+  const pulse = useRef(new Animated.Value(1)).current;
+  const pulsing = loading && !reduceMotion;
+  useEffect(() => {
+    if (!pulsing) {
+      const settle = Animated.timing(pulse, { toValue: 1, duration: 150, useNativeDriver: true });
+      settle.start();
+      return () => settle.stop();
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.45, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulsing, pulse]);
 
   const ratio = (t) => (hi - lo > 0 ? (t - lo) / (hi - lo) : 0);
   const hair = StyleSheet.hairlineWidth;
@@ -299,26 +471,61 @@ export default function BarChart({
   };
 
   // --- layouts ----------------------------------------------------------------
+  const labelText = (i) => (hasXLabels && xLabels[i] != null ? xLabels[i] : '');
   let body = null;
   if (geometry && horizontal) {
-    const row = computeRowLayout(count, rowsHeight);
+    const placed = canPlace;
     body = (
       <View style={styles.hBody}>
-        {hasXLabels && (
-          <View style={[styles.catColumn, { paddingBottom: axisH }]}>
-            {values.map((_, i) => (
-              <View key={i} style={[styles.catCell, { height: row.slot }]}>
-                <Text numberOfLines={1} style={[styles.xLabel, xLabelStyle]}>
-                  {xLabels[i] != null ? xLabels[i] : ''}
-                </Text>
+        {hasXLabels &&
+          (sortOn ? (
+            <View style={[styles.catColumnSorted, { paddingBottom: axisH }]}>
+              <View style={[styles.clip, { height: rowsHeight }]}>
+                {/* Invisible copies size the column; the visible labels slide with their bars. */}
+                <View style={styles.sizer}>
+                  {values.map((_, i) => (
+                    <Text key={i} numberOfLines={1} style={[styles.xLabel, styles.sizerText, xLabelStyle]}>
+                      {labelText(i)}
+                    </Text>
+                  ))}
+                </View>
+                {placed &&
+                  keys.map((key, i) => (
+                    <Animated.View key={key} style={[styles.catSlide, { height: row.slot, transform: slide(key) }]}>
+                      <Text numberOfLines={1} style={[styles.xLabel, xLabelStyle]}>
+                        {labelText(i)}
+                      </Text>
+                    </Animated.View>
+                  ))}
               </View>
-            ))}
-          </View>
-        )}
-        <View style={styles.track} testID={`${testID}-plot`} onLayout={onTrackLayout}>
-          <View style={{ height: rowsHeight }}>
+            </View>
+          ) : (
+            <View style={[styles.catColumn, { paddingBottom: axisH }]}>
+              {values.map((_, i) => (
+                <View key={i} style={[styles.catCell, { height: row.slot }]}>
+                  <Text numberOfLines={1} style={[styles.xLabel, xLabelStyle]}>
+                    {labelText(i)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ))}
+        <View style={styles.track} testID={`${testID}-plot`} onLayout={onTrackLayout} {...scrubProps}>
+          <View style={[{ height: rowsHeight }, sortOn && styles.clip]}>
             {trackWidth != null && lines(true)}
-            {trackWidth != null && slots.map(renderSlot)}
+            {trackWidth != null &&
+              (sortOn
+                ? placed &&
+                  keys.map((key, i) => (
+                    <Animated.View
+                      key={key}
+                      testID={`${testID}-slide-${i}`}
+                      style={[styles.rowSlide, { height: row.slot, transform: slide(key) }, selected === i && styles.raised]}
+                    >
+                      {renderSlot(slots[i], i)}
+                    </Animated.View>
+                  ))
+                : slots.map((slot, i) => renderSlot(slot, i)))}
           </View>
           {trackWidth != null && ticks && (
             <View testID={`${testID}-y-axis`} style={{ height: H_AXIS_SPACE }}>
@@ -338,6 +545,10 @@ export default function BarChart({
     );
   } else if (geometry) {
     const g = geometry;
+    // Sorted columns are absolutely placed, so they carry their own px size and no margin.
+    const colGeo = sortOn ? { ...g, margin: 0 } : g;
+    const colLeft = 2 * pad;
+    const colWidth = pitch != null ? Math.max(0, pitch - 2 * pad) : 0;
     body = (
       <View style={styles.vBody}>
         {ticks && (
@@ -357,23 +568,52 @@ export default function BarChart({
           </View>
         )}
         <View style={styles.vMain}>
-          <View>
+          <View testID={`${testID}-plot`} onLayout={onTrackLayout} {...scrubProps}>
             {lines(false)}
-            <View style={[styles.plot, { height: g.labelTop + L + g.labelBottom, paddingHorizontal: `${g.margin}%` }]}>
-              {slots.map(renderSlot)}
+            <View
+              style={[
+                styles.plot,
+                { height: g.labelTop + L + g.labelBottom, paddingHorizontal: sortOn ? 0 : `${g.margin}%` },
+                sortOn && styles.clipX,
+              ]}
+            >
+              {sortOn
+                ? canPlace &&
+                  keys.map((key, i) => (
+                    <Animated.View
+                      key={key}
+                      testID={`${testID}-slide-${i}`}
+                      style={[styles.colSlide, { left: colLeft, width: colWidth, transform: slide(key) }, selected === i && styles.raised]}
+                    >
+                      {renderSlot(slots[i], i, colGeo)}
+                    </Animated.View>
+                  ))
+                : slots.map((slot, i) => renderSlot(slot, i))}
             </View>
           </View>
-          {hasXLabels && (
-            <View style={[styles.xAxis, { paddingHorizontal: `${g.margin}%` }]}>
-              {values.map((_, i) => (
-                <View key={i} style={[styles.xCell, { marginHorizontal: `${g.margin}%` }]}>
-                  <Text numberOfLines={1} style={[styles.xLabel, xLabelStyle]}>
-                    {xLabels[i] != null ? xLabels[i] : ''}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
+          {hasXLabels &&
+            (sortOn ? (
+              <View style={[styles.xAxis, styles.clipX]}>
+                {canPlace &&
+                  keys.map((key, i) => (
+                    <Animated.View key={key} style={[styles.xSlide, { left: colLeft, width: colWidth, transform: slide(key) }]}>
+                      <Text numberOfLines={1} style={[styles.xLabel, xLabelStyle]}>
+                        {labelText(i)}
+                      </Text>
+                    </Animated.View>
+                  ))}
+              </View>
+            ) : (
+              <View style={[styles.xAxis, { paddingHorizontal: `${g.margin}%` }]}>
+                {values.map((_, i) => (
+                  <View key={i} style={[styles.xCell, { marginHorizontal: `${g.margin}%` }]}>
+                    <Text numberOfLines={1} style={[styles.xLabel, xLabelStyle]}>
+                      {labelText(i)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ))}
         </View>
       </View>
     );
@@ -381,9 +621,9 @@ export default function BarChart({
 
   const legend = legendOn ? (
     <View testID={`${testID}-legend`} onLayout={onLegendLayout} style={[styles.legend, legendStyle]}>
-      {list.map((s, i) => (
+      {norm.list.map((s, i) => (
         <View key={i} style={styles.legendItem}>
-          <View style={[styles.swatch, { backgroundColor: seriesColor(i, values[0] ? values[0][i] : 0, 0) }]} />
+          <View style={[styles.swatch, { backgroundColor: colorOfSeries(i, norm.values[0] ? norm.values[0][i] : 0, 0) }]} />
           <Text style={[styles.legendText, legendTextStyle]}>{seriesName(i)}</Text>
         </View>
       ))}
@@ -393,17 +633,27 @@ export default function BarChart({
   const containerSizing =
     typeof height === 'number' ? { height: totalHeight } : hasOwnSize ? null : { height: fallbackHeight };
   const rootProps = { testID, onLayout, style: [containerStyles, style, containerSizing, styles.container] };
+  if (loading) {
+    Object.assign(rootProps, { accessible: true, accessibilityLabel: 'Loading chart', accessibilityState: { busy: true } });
+  }
   const content = (
     <>
-      {body}
+      <Animated.View style={[styles.fill, { opacity: pulse }]}>{body}</Animated.View>
       {legend}
     </>
   );
 
-  // With a tooltip open, tapping anywhere on the chart that isn't a bar clears the selection.
-  if (selectable && selected != null) {
+  // Selectable charts always render a Pressable root (disabled while nothing is selected):
+  // switching the root element type would remount every bar. Tapping the chart outside
+  // the bars clears the selection.
+  if (selectable) {
     return (
-      <Pressable {...rootProps} accessible={false} onPress={() => changeSelection(null)}>
+      <Pressable
+        {...rootProps}
+        accessible={rootProps.accessible || false}
+        disabled={selected == null}
+        onPress={() => changeSelection(null)}
+      >
         {content}
       </Pressable>
     );
@@ -413,6 +663,17 @@ export default function BarChart({
 
 const styles = StyleSheet.create({
   container: { overflow: 'hidden' },
+  fill: { flex: 1 },
+  clip: { overflow: 'hidden' },
+  clipX: { overflow: 'hidden' },
+  raised: { zIndex: 1 },
+  rowSlide: { position: 'absolute', left: 0, right: 0, top: 0 },
+  colSlide: { position: 'absolute', top: 0, bottom: 0 },
+  xSlide: { position: 'absolute', top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  catColumnSorted: {},
+  sizer: { height: 0, overflow: 'hidden' },
+  sizerText: { marginRight: 6 },
+  catSlide: { position: 'absolute', left: 0, right: 6, top: 0, justifyContent: 'center', alignItems: 'flex-end' },
   vBody: { flex: 1, flexDirection: 'row' },
   vMain: { flex: 1 },
   plot: { flexDirection: 'row' },

@@ -5,13 +5,16 @@ import {
   computeBounds,
   computeSlot,
   computeDelay,
+  computeOrder,
   computeRowLayout,
   computeTicks,
   resolveColor,
   normalizeSeries,
   resolveSelectedIndex,
+  scrubIndex,
   segmentTiming,
   tooltipPlacement,
+  uniqueKeys,
 } from '../src/layout';
 
 describe('computeBarHeights', () => {
@@ -193,5 +196,36 @@ describe('segmentTiming', () => {
   });
   it('does nothing special without animation', () => {
     expect(segmentTiming({ pos: 40, neg: 0 }, { pos: 0, neg: 20 }, 'neg', 0, 0)).toEqual({ duration: 0, delay: 0 });
+  });
+});
+
+describe('computeOrder', () => {
+  it('sorts descending by default and ascending on request', () => {
+    expect(computeOrder([3, 9, 1])).toEqual([1, 0, 2]);
+    expect(computeOrder([3, 9, 1], 'asc')).toEqual([2, 0, 1]);
+  });
+  it('is stable on ties and tolerates bad values', () => {
+    expect(computeOrder([5, 5, 7, 5])).toEqual([2, 0, 1, 3]);
+    expect(computeOrder([NaN, -2, 'x'])).toEqual([0, 2, 1]);
+  });
+});
+
+describe('uniqueKeys', () => {
+  it('keeps ids and disambiguates repeats and blanks', () => {
+    expect(uniqueKeys(['a', 'b', 'a', null, 3])).toEqual(['a', 'b', 'a#2', '#3', '3']);
+  });
+});
+
+describe('scrubIndex', () => {
+  it('maps a position to a slot, clamped', () => {
+    const g = { offset: 10, pitch: 50, count: 4 };
+    expect(scrubIndex(12, g)).toBe(0);
+    expect(scrubIndex(61, g)).toBe(1);
+    expect(scrubIndex(-40, g)).toBe(0);
+    expect(scrubIndex(900, g)).toBe(3);
+  });
+  it('returns null without bars or size', () => {
+    expect(scrubIndex(5, { pitch: 0, count: 3 })).toBeNull();
+    expect(scrubIndex(5, { pitch: 10, count: 0 })).toBeNull();
   });
 });
