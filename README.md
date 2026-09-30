@@ -8,7 +8,7 @@ An animated bar chart for React Native.
 
 - **Runs on the UI thread** — bars animate with `transform` + `useNativeDriver`, so the JS thread can be busy and the animation stays smooth.
 - **Zero dependencies** — just `react` and `react-native`. No SVG, no Reanimated, no Skia.
-- **Small** — about 13 kB packed (docs included), no build step.
+- **Small** — about 20 kB packed (docs included), no build step.
 - **TypeScript types** included.
 - Works on iOS, Android and React Native Web.
 
@@ -86,6 +86,52 @@ If you don't pass `height`, the chart measures itself when its style has a `heig
 
 **Fixed scale** — pass `maxValue` so charts with different data share the same scale (e.g. percentages, or comparing two charts side by side).
 
+**Negative values**
+
+```jsx
+<BarChart
+  dataY={[12, -8, 20, -15, 6]}
+  showValues
+  formatValue={(v) => `${v}%`}
+  color={(v) => (v < 0 ? '#d9534f' : '#3aa76d')}
+/>
+```
+
+Negative values are drawn below a baseline (a zero line, colored with `baselineColor`). The scale always includes 0; pass `minValue` / `maxValue` to fix either end. When a bar changes sign, it first shrinks to zero and then grows on the other side.
+
+**Grouped series**
+
+```jsx
+<BarChart
+  series={[
+    { name: 'Sales', data: [120, 200, 150, 280] },
+    { name: 'Costs', data: [80, 110, 130, 150], color: '#e07a3a' },
+  ]}
+  xLabels={['Q1', 'Q2', 'Q3', 'Q4']}
+  showYAxis
+  showTooltip
+/>
+```
+
+Each category gets one bar per series, and a legend is shown when the series have a `name`. Series without a `color` take it from `color` (if it's a palette) or from a built-in palette. The tooltip lists every series, and `formatValue` receives the series index as its third argument.
+
+**Stacked series**
+
+```jsx
+<BarChart
+  stacked
+  showValues
+  series={[
+    { name: 'iOS', data: [40, 55, 30, 70] },
+    { name: 'Android', data: [30, 45, 50, 40] },
+    { name: 'Refunds', data: [-10, -5, -20, -8] },
+  ]}
+  xLabels={['W1', 'W2', 'W3', 'W4']}
+/>
+```
+
+Positive values stack upwards and negative values downwards; `showValues` shows the total of each stack.
+
 **Y axis with grid lines**
 
 ```jsx
@@ -113,7 +159,7 @@ The scale is rounded up to a "nice" top value (here `$0 … $500` in steps of 10
 />
 ```
 
-`xLabels` are drawn as category labels on the left, values sit at the end of each bar and, with `showYAxis`, the value axis goes along the bottom. Bars fill the width of the chart, and the height is split evenly between them.
+`xLabels` are drawn as category labels on the left, values sit at the end of each bar and, with `showYAxis`, the value axis goes along the bottom. Bars fill the width of the chart. Without `height` (or a flex / height style) the chart sizes itself from the number of bars, so a long list doesn't get squeezed. Negative values, `series` and `stacked` work the same way as in vertical charts.
 
 **Tap a bar to highlight it**
 
@@ -121,35 +167,33 @@ The scale is rounded up to a "nice" top value (here `$0 … $500` in steps of 10
 <BarChart dataY={data} xLabels={months} showTooltip formatValue={(v) => `$${v}`} />
 ```
 
-Tapping a bar selects it: the other bars fade to `dimOpacity` and a tooltip (`"Apr: $260"`) appears on the selected one; tapping it again clears the selection. To control the selection yourself, pass `selectedIndex` and update it from `onBarPress`:
+Tapping a bar selects it: the other bars fade to `dimOpacity` and a tooltip (`"Apr: $260"`) appears on the selected one. Tapping it again, or tapping the chart anywhere outside the bars, clears the selection. To control the selection yourself, pass `selectedIndex` and `onSelectionChange`:
 
 ```jsx
 const [selected, setSelected] = useState(null);
 
-<BarChart
-  dataY={data}
-  selectedIndex={selected}
-  showTooltip
-  onBarPress={({ index }) => setSelected(index === selected ? null : index)}
-/>
+<BarChart dataY={data} selectedIndex={selected} onSelectionChange={setSelected} showTooltip />
 ```
 
-`selectedIndex` also works without `showTooltip`, to just highlight a bar.
+`onSelectionChange` alone (without `showTooltip`) makes bars selectable with just the highlight. To also close the tooltip when the user taps elsewhere on the screen, set `selectedIndex` back to `null` from that screen's own handler (e.g. a `Pressable` wrapping it, or when scrolling starts).
 
 ## Props
 
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
-| `dataY` | `number[]` | **required** | Values to plot. Negative or non-numeric values are drawn as `0`. |
+| `dataY` | `number[]` | — | Values to plot. Negative values are drawn below a baseline; non-numeric values count as `0`. |
+| `series` | `{ data, name?, color? }[]` | — | Several values per category. Replaces `dataY`. See [Grouped series](#recipes). |
+| `stacked` | `boolean` | `false` | Stack `series` instead of drawing them side by side. |
 | `labels` | `string[]` | — | Text shown above each bar. Takes precedence over `showValues`. |
 | `xLabels` | `string[]` | — | Text shown under each bar (x-axis). |
 | `showValues` | `boolean` | `false` | Show `formatValue(value)` above bars when `labels` is not set. |
-| `formatValue` | `(value, index) => string` | `String` | Formats values for `showValues` and accessibility labels. |
+| `formatValue` | `(value, index, seriesIndex?) => string` | `String` | Formats values for labels, tooltips and accessibility labels. |
 | `color` | `string \| string[] \| (value, index) => string` | `'red'` | One color, a palette cycled across bars, or a function. |
-| `height` | `number` | measured / `200` | Fixed height in px (labels included). |
-| `maxValue` | `number` | `max(dataY)` | Top of the scale. Values above it are clamped. |
+| `height` | `number` | measured / `200` / auto | Fixed height in px (labels and legend included). Horizontal charts size themselves from the number of bars. |
+| `maxValue` | `number` | largest value | Top of the scale. Values above it are clamped. |
+| `minValue` | `number` | smallest value, or `0` | Bottom of the scale (must be negative). Values below it are clamped. |
 | `horizontal` | `boolean` | `false` | Draw bars left to right. See [Horizontal bars](#recipes). |
-| `barRadius` | `number` | `25` | Radius of the bars' outer corners (top, or right when horizontal). |
+| `barRadius` | `number` | `25` | Radius of the bars' outer corners (the end away from the baseline). |
 | `style` / `containerStyles` | `ViewStyle` | — | Styles for the container. `containerStyles` is kept for backwards compatibility. |
 | `labelStyle` | `TextStyle` | — | Style for the labels above bars. |
 | `xLabelStyle` | `TextStyle` | — | Style for the x-axis labels. |
@@ -158,21 +202,25 @@ const [selected, setSelected] = useState(null);
 | `formatYLabel` | `(value, index) => string` | `formatValue` | Formats axis labels. |
 | `yLabelStyle` | `TextStyle` | — | Style for the axis labels. |
 | `gridColor` | `string` | `'#e3e3e3'` | Color of the grid lines. |
+| `baselineColor` | `string` | `'#9e9e9e'` | Color of the zero line shown when the scale goes below 0. |
+| `showLegend` | `boolean` | when series have names | Legend under the chart for `series`. |
+| `legendStyle` / `legendTextStyle` | `ViewStyle` / `TextStyle` | — | Legend container and text styles. |
 | `selectedIndex` | `number \| null` | — | Highlighted bar (controlled). The rest fade to `dimOpacity`. |
-| `showTooltip` | `boolean` | `false` | Tooltip on the selected bar. Makes bars tappable; uncontrolled unless `selectedIndex` is set. |
-| `formatTooltip` | `({ index, value, label, xLabel }) => string` | `"xLabel: value"` | Tooltip text. |
+| `onSelectionChange` | `(index \| null) => void` | — | Called when a bar is selected or the selection is cleared. Makes bars selectable. |
+| `showTooltip` | `boolean` | `false` | Tooltip on the selected bar. Makes bars tappable; tapping outside the bars closes it. Uncontrolled unless `selectedIndex` is set. |
+| `formatTooltip` | `({ index, value, values, label, xLabel }) => string` | `"xLabel: value"` | Tooltip text. May contain `\n`. |
 | `tooltipStyle` / `tooltipTextStyle` | `ViewStyle` / `TextStyle` | — | Tooltip bubble and text styles. |
 | `dimOpacity` | `number` | `0.35` | Opacity of non-selected bars while one is selected. |
 | `animationDuration` | `number` | `300` | Duration in ms. |
 | `animationDelay` | `'random' \| 'stagger' \| 'none' \| number` | `'random'` | Delay before each bar starts. A number means *ms × bar index*. |
 | `easing` | `EasingFunction` | `Easing.out(Easing.cubic)` | Any function from React Native's `Easing`. |
 | `respectReduceMotion` | `boolean` | `true` | Skip animations when the OS "Reduce motion" setting is on. |
-| `onBarPress` | `({ index, value, label, xLabel }) => void` | — | Makes bars pressable. |
+| `onBarPress` | `({ index, value, values, label, xLabel }) => void` | — | Makes bars pressable. With `series`, `value` is the category total and `values` has one item per series. |
 | `testID` | `string` | `'bar-chart'` | Bars get `${testID}-bar-${index}`. |
 
 ### Accessibility
 
-Each bar exposes an accessibility label like `"Apr: $260"` (x-label + value label) and a `selected` accessibility state, and bars become buttons when `onBarPress` or `showTooltip` is set. Animations are disabled automatically when the user has "Reduce motion" enabled.
+Each bar exposes an accessibility label like `"Apr: $260"` (x-label + value label; with `series`, `"Q1: Sales 120, Costs 80"`) and a `selected` accessibility state, and bars become buttons when `onBarPress`, `onSelectionChange` or `showTooltip` is set. Animations are disabled automatically when the user has "Reduce motion" enabled.
 
 ## Migrating from 0.0.x
 
@@ -189,9 +237,8 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list.
 
 ## Roadmap
 
-- Grouped and stacked bars
-- Negative values (bars below a baseline)
 - Line chart
+- Example app (Expo) and a Snack
 
 Ideas and PRs are welcome — open an [issue](https://github.com/nachourpi/react-native-animated-charts/issues).
 

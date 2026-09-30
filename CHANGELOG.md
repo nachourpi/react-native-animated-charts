@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0 — 2026-09-30
+
+### Added
+- Negative values are drawn below a baseline (zero line, `baselineColor`), in vertical and horizontal charts, with axis ticks below 0. New `minValue` to fix the bottom of the scale.
+- `series`: several values per category, drawn side by side (grouped) with a legend (`showLegend`, `legendStyle`, `legendTextStyle`).
+- `stacked`: stacks `series`; positive and negative values stack separately and `showValues` shows each stack's total.
+- `onSelectionChange(index | null)`: selection callback for controlled and uncontrolled charts; on its own it makes bars selectable without a tooltip.
+- Multi-line tooltips (one line per series); `formatTooltip` may return `\n`.
+- `onBarPress` / `formatTooltip` events include `values` (one per series). `formatValue` receives the series index.
+
+### Changed
+- **Negative values are no longer drawn as 0.** Charts whose data has negative values now show them below a baseline; clamp them to 0 yourself (`data.map((v) => Math.max(0, v))`) to keep the old look.
+- Tapping the chart outside the bars closes the tooltip.
+- Horizontal charts without `height` size themselves from the number of bars instead of a fixed 200 px.
+- When a bar changes sign it first shrinks to 0 and then grows on the other side, keeping its old color while it retracts.
+- Selection dimming fades each category as one layer, so stacked segments don't show through each other.
+- Value labels wider than their bar are no longer clipped.
+- New demo GIF.
+
 ## 1.1.0 — 2026-09-30
 
 ### Added
