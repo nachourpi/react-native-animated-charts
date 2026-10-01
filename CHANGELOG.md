@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Contribution guide, issue and pull request templates.
+
 ## 1.4.0 — 2026-10-01
 
 ### Added

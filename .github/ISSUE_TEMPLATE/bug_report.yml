@@ -1,0 +1,49 @@
+name: Bug report
+description: Something doesn't work or doesn't look right
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report this! A small code sample that reproduces it helps a lot.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Code to reproduce
+      description: The smallest `<BarChart />` usage that shows the problem (an Expo Snack link is great too).
+      render: jsx
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: e.g. 1.4.0
+    validations:
+      required: true
+  - type: input
+    id: rn
+    attributes:
+      label: React Native / Expo version
+      placeholder: e.g. React Native 0.81, Expo SDK 54
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: true
+      options: [iOS, Android, Web, Expo Go]
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots, recordings, logs
+      description: A screen recording is the best way to show an animation or gesture problem.

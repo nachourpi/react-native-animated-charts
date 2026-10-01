@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest an idea or a new prop
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to build?
+      description: Describe the screen or the use case. Real use cases help design the right API.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like the chart to do?
+      description: A sketch of the props you have in mind is welcome, but not required.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: How are you solving it today?

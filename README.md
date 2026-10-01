@@ -354,7 +354,11 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list.
 - More ways to touch data: drag-to-reorder, range selection
 - Line chart
 
-Ideas and PRs are welcome — open an [issue](https://github.com/nachourpi/react-native-animated-charts/issues).
+Ideas and PRs are welcome — see [Contributing](#contributing).
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome! Open an [issue](https://github.com/nachourpi/react-native-animated-charts/issues/new/choose) or read [CONTRIBUTING.md](CONTRIBUTING.md) before sending a pull request.
 
 ## Development
 
