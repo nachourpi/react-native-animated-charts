@@ -2,19 +2,39 @@
 
 [![npm](https://img.shields.io/npm/v/react-native-animated-charts.svg)](https://www.npmjs.com/package/react-native-animated-charts)
 [![CI](https://github.com/nachourpi/react-native-animated-charts/actions/workflows/ci.yml/badge.svg)](https://github.com/nachourpi/react-native-animated-charts/actions/workflows/ci.yml)
+![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
+![types](https://img.shields.io/badge/types-TypeScript-blue)
 [![license](https://img.shields.io/npm/l/react-native-animated-charts.svg)](LICENSE)
 
-An animated bar chart for React Native.
+**Bar charts for React Native that move — and that your users can move.**
 
-- **Runs on the UI thread** — bars animate with `transform` + `useNativeDriver`, so the JS thread can be busy and the animation stays smooth.
-- **Zero dependencies** — just `react` and `react-native`. No SVG, no Reanimated, no Skia.
-- **Small** — about 24 kB packed (docs included), no build step.
-- **TypeScript types** included.
-- Works on iOS, Android and React Native Web.
+Most chart libraries draw numbers. This one lets people *touch* them: drag a bar to set a goal, scrub across a month, watch live data stream in or a ranking reshuffle — all animated on the UI thread, with zero dependencies.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/demo.gif" width="452" alt="Animated bar chart demo">
+  <img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/demo.gif" width="452" alt="Animated bar chart demo: bar chart race, negative values, grouped and stacked series">
 </p>
+
+## Why this one?
+
+- **Interactive, not just animated.** Drag bars to edit values, scrub with a finger, tap for tooltips. Charts become inputs: budgets, goals, plans, polls.
+- **Smooth where it matters.** Bars move with `transform` + `useNativeDriver`, so animations run on the UI thread and stay fluid while your JS is busy.
+- **Zero dependencies.** Just `react` and `react-native` — no SVG, no Skia, no Reanimated, nothing to link. Works in Expo Go, on iOS, Android and the web.
+- **Understands changing data.** Bars keep their identity across updates: rankings reshuffle (bar chart race), live readings slide in and out, values that change sign cross the baseline.
+- **Accessible.** Every bar has a label, editable bars are adjustable with VoiceOver / TalkBack, and "Reduce motion" is respected.
+- **Small and typed.** Plain JS, no build step, TypeScript types included.
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/plan-vs-actual.gif" width="260" alt="Plan vs actual"><br><b>Plan vs. actual</b></td>
+    <td align="center" width="33%"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/drag-to-edit.gif" width="260" alt="Drag to edit"><br><b>Drag to edit</b></td>
+    <td align="center" width="33%"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/live-stream.gif" width="260" alt="Live stream"><br><b>Live data</b></td>
+  </tr>
+  <tr>
+    <td align="center" width="33%"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/bar-chart-race.gif" width="260" alt="Bar chart race"><br><b>Bar chart race</b></td>
+    <td align="center" width="33%"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/scrub.gif" width="260" alt="Scrub"><br><b>Scrub</b></td>
+    <td align="center" width="33%">…plus negative values, grouped &amp; stacked series, axes, horizontal bars, tooltips and loading skeletons.</td>
+  </tr>
+</table>
 
 ## Installation
 
@@ -29,62 +49,135 @@ Requires React Native `>= 0.64` and React `>= 17`. Nothing to link, no native co
 ## Quick start
 
 ```jsx
-import React, { useState } from 'react';
-import { Button, View } from 'react-native';
 import { BarChart } from 'react-native-animated-charts';
 
-export default function SalesChart() {
-  const [data, setData] = useState([120, 340, 90, 260, 410, 180]);
-
-  return (
-    <View style={{ padding: 16 }}>
-      <BarChart
-        dataY={data}
-        xLabels={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']}
-        showValues
-        formatValue={(v) => `$${v}`}
-        color={['#4f7cbd', '#7fa7e0']}
-        barRadius={6}
-        height={240}
-        animationDelay="stagger"
-        onBarPress={({ xLabel, value }) => console.log(xLabel, value)}
-      />
-      <Button
-        title="Shuffle"
-        onPress={() => setData(data.map(() => Math.round(Math.random() * 500)))}
-      />
-    </View>
-  );
-}
-```
-
-Whenever `dataY` changes, every bar animates from its current height to the new one.
-
-## Recipes
-
-**Fill the available space (flex height)**
-
-```jsx
-<View style={{ flex: 1 }}>
-  <BarChart dataY={data} style={{ flex: 1 }} />
-</View>
-```
-
-If you don't pass `height`, the chart measures itself when its style has a `height` or `flex`; otherwise it defaults to 200 px.
-
-**Color by value**
-
-```jsx
 <BarChart
-  dataY={[95, 40, 72, 15]}
-  maxValue={100}
-  color={(v) => (v >= 70 ? '#3aa76d' : v >= 30 ? '#e0a526' : '#d9534f')}
+  dataY={[120, 340, 90, 260, 410, 180]}
+  xLabels={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']}
+  showValues
+  formatValue={(v) => `$${v}`}
+  color="#4f7cbd"
+  barRadius={6}
+/>
+```
+
+Change `dataY` and every bar animates from its current height to the new one. That's it — everything below is opt-in.
+
+## Drag to edit
+
+<p align="center"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/drag-to-edit.gif" width="380" alt="Dragging bars to change a budget split"></p>
+
+```jsx
+const [split, setSplit] = useState([40, 25, 20, 15]);
+
+<BarChart
+  dataY={split}
+  xLabels={['Rent', 'Food', 'Fun', 'Save']}
+  editable
+  step={5}
+  maxValue={60}
+  onChange={setSplit}
   showValues
   formatValue={(v) => `${v}%`}
 />
 ```
 
-**Fixed scale** — pass `maxValue` so charts with different data share the same scale (e.g. percentages, or comparing two charts side by side).
+Drag a bar up or down (left or right on horizontal charts) and its value follows your finger, snapped to `step`, with a live tooltip. The chart is controlled like a `TextInput`: update `dataY` in `onChange`, and save in `onChangeEnd`. Pass a function to `editable` to choose which bars can move. The scale stays still while dragging, so set `maxValue` to give users room to go higher. Screen-reader users can adjust the same bars with swipe up / down.
+
+## Plan vs. actual
+
+The two ideas together: the past streams in as real data, the future is a plan you drag. When time moves on, today's plan becomes a real bar and everything slides one slot to the left.
+
+<p align="center"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/plan-vs-actual.gif" width="400" alt="Actual sleep vs. planned sleep, with draggable planned bars and time moving on"></p>
+
+```jsx
+function SleepPlan({ days, actual, plan, onPlanChange }) {
+  // days: ids of the visible days (e.g. dates), actual: past values, plan: today + future
+  const today = actual.length;
+  return (
+    <BarChart
+      ids={days}
+      dataY={[...actual, ...plan]}
+      xLabels={days.map(weekdayName)} // e.g. "Mon", "Tue"…
+      editable={(i) => i >= today}
+      onChange={(values) => onPlanChange(values.slice(today))}
+      step={0.5}
+      maxValue={10}
+      marker={{ at: today, label: 'Today' }}
+      color={(v, i) => (i < today ? '#4f7cbd' : '#3aa76d')}
+      editableStyle={{ opacity: 0.55 }}
+      formatValue={(v) => `${v}h`}
+      showYAxis
+    />
+  );
+}
+```
+
+Works for any "how did it go / what's next" screen: budgets, step goals, sales targets, energy schedules.
+
+## Live data
+
+<p align="center"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/live-stream.gif" width="380" alt="Live heart-rate readings sliding in"></p>
+
+```jsx
+<BarChart dataY={readings.map((r) => r.bpm)} ids={readings.map((r) => r.time)} maxValue={120} />
+```
+
+Give each value an id (a timestamp works) and keep a window of the latest readings: new bars slide in from the edge and old ones slide out, instead of the whole chart jumping. Everything moves on the native driver, so it stays smooth even when readings arrive fast.
+
+## Bar chart race
+
+<p align="center"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/bar-chart-race.gif" width="380" alt="Most loved languages bar chart race"></p>
+
+```jsx
+<BarChart
+  horizontal
+  sort="desc"
+  maxBars={7}
+  loading={!frame}
+  dataY={frame?.values ?? []}
+  xLabels={languages}
+  showValues
+/>
+```
+
+With `sort`, bars are ordered by value and slide to their new place (with their labels) whenever the ranking changes, while their lengths animate too. Categories are followed by `ids` (or `xLabels`), so the data can come in any order. `maxBars` shows only the top N: the rest slide in and out from the edge. Update the data about every `animationDuration` ms for a continuous race. Works with vertical charts and `series` (sorted by total) too.
+
+## Scrub and tooltips
+
+<p align="center"><img src="https://raw.githubusercontent.com/nachourpi/react-native-animated-charts/master/docs/gifs/scrub.gif" width="380" alt="Scrubbing across monthly revenue bars"></p>
+
+```jsx
+<BarChart dataY={revenue} xLabels={months} scrub showTooltip onSelectionChange={() => Haptics.selectionAsync()} />
+```
+
+Drag along the bars and the selection (and tooltip) follows the finger, like in finance apps; taps still work. Only drags along the bars are taken, so a parent `ScrollView` keeps scrolling. The chart has no dependencies, so haptics are up to you: hook them to `onSelectionChange` (the example uses `expo-haptics`).
+
+**Tap a bar to highlight it**
+
+```jsx
+<BarChart dataY={data} xLabels={months} showTooltip formatValue={(v) => `$${v}`} />
+```
+
+Tapping a bar selects it: the other bars fade to `dimOpacity` and a tooltip (`"Apr: $260"`) appears on the selected one. Tapping it again, or tapping the chart anywhere outside the bars, clears the selection. To control the selection yourself, pass `selectedIndex` and `onSelectionChange`:
+
+```jsx
+const [selected, setSelected] = useState(null);
+
+<BarChart dataY={data} selectedIndex={selected} onSelectionChange={setSelected} showTooltip />
+```
+
+`onSelectionChange` alone (without `showTooltip`) makes bars selectable with just the highlight. To also close the tooltip when the user taps elsewhere on the screen, set `selectedIndex` back to `null` from that screen's own handler (e.g. a `Pressable` wrapping it, or when scrolling starts).
+
+## Loading state
+
+```jsx
+<BarChart loading={!data} dataY={data ?? []} xLabels={months} />
+```
+
+While `loading`, the chart shows pulsing placeholder bars (one per `xLabels` item, or 6) in `skeletonColor`, with no labels or interaction. When `loading` turns false, the bars grow from the placeholders to the real values — no layout jump, no spinner.
+
+## More recipes
 
 **Negative values**
 
@@ -132,37 +225,6 @@ Each category gets one bar per series, and a legend is shown when the series hav
 
 Positive values stack upwards and negative values downwards; `showValues` shows the total of each stack.
 
-**Bar chart race**
-
-```jsx
-<BarChart
-  horizontal
-  sort="desc"
-  maxBars={10}
-  dataY={frame.values}
-  xLabels={frame.languages}
-  showValues
-/>
-```
-
-With `sort`, bars are ordered by value and slide to their new place (with their labels) whenever the ranking changes, while their lengths animate too. Categories are followed across updates by `ids` (or `xLabels`), so the data can come in any order. `maxBars` shows only the top N: the rest slide in and out from the edge. Update the data about every `animationDuration` ms for a continuous race. Works with vertical charts and `series` (sorted by total) too.
-
-**Scrub**
-
-```jsx
-<BarChart dataY={data} xLabels={months} scrub showTooltip onSelectionChange={() => Haptics.selectionAsync()} />
-```
-
-Drag along the bars and the selection (and tooltip) follows the finger, like in finance apps; taps still work. Only drags along the bars are taken, so a parent `ScrollView` keeps scrolling. The chart has no dependencies, so haptics are up to you: hook them to `onSelectionChange` (the example uses `expo-haptics`).
-
-**Loading state**
-
-```jsx
-<BarChart loading={!data} dataY={data ?? []} xLabels={months} />
-```
-
-While `loading`, the chart shows pulsing placeholder bars (one per `xLabels` item, or 6) in `skeletonColor`, with no labels or interaction. When `loading` turns false, the bars grow from the placeholders to the real values.
-
 **Y axis with grid lines**
 
 ```jsx
@@ -192,21 +254,29 @@ The scale is rounded up to a "nice" top value (here `$0 … $500` in steps of 10
 
 `xLabels` are drawn as category labels on the left, values sit at the end of each bar and, with `showYAxis`, the value axis goes along the bottom. Bars fill the width of the chart. Without `height` (or a flex / height style) the chart sizes itself from the number of bars, so a long list doesn't get squeezed. Negative values, `series` and `stacked` work the same way as in vertical charts.
 
-**Tap a bar to highlight it**
+**Fill the available space (flex height)**
 
 ```jsx
-<BarChart dataY={data} xLabels={months} showTooltip formatValue={(v) => `$${v}`} />
+<View style={{ flex: 1 }}>
+  <BarChart dataY={data} style={{ flex: 1 }} />
+</View>
 ```
 
-Tapping a bar selects it: the other bars fade to `dimOpacity` and a tooltip (`"Apr: $260"`) appears on the selected one. Tapping it again, or tapping the chart anywhere outside the bars, clears the selection. To control the selection yourself, pass `selectedIndex` and `onSelectionChange`:
+If you don't pass `height`, the chart measures itself when its style has a `height` or `flex`; otherwise it defaults to 200 px.
+
+**Color by value**
 
 ```jsx
-const [selected, setSelected] = useState(null);
-
-<BarChart dataY={data} selectedIndex={selected} onSelectionChange={setSelected} showTooltip />
+<BarChart
+  dataY={[95, 40, 72, 15]}
+  maxValue={100}
+  color={(v) => (v >= 70 ? '#3aa76d' : v >= 30 ? '#e0a526' : '#d9534f')}
+  showValues
+  formatValue={(v) => `${v}%`}
+/>
 ```
 
-`onSelectionChange` alone (without `showTooltip`) makes bars selectable with just the highlight. To also close the tooltip when the user taps elsewhere on the screen, set `selectedIndex` back to `null` from that screen's own handler (e.g. a `Pressable` wrapping it, or when scrolling starts).
+**Fixed scale** — pass `maxValue` so charts with different data share the same scale (e.g. percentages, or comparing two charts side by side).
 
 ## Props
 
@@ -243,11 +313,17 @@ const [selected, setSelected] = useState(null);
 | `tooltipStyle` / `tooltipTextStyle` | `ViewStyle` / `TextStyle` | — | Tooltip bubble and text styles. |
 | `dimOpacity` | `number` | `0.35` | Opacity of non-selected bars while one is selected. |
 | `sort` | `'desc' \| 'asc'` | — | Order bars by value; they slide to their new place when the ranking changes. |
-| `ids` | `(string \| number)[]` | `xLabels` | Identity of each category for `sort`. |
+| `ids` | `(string \| number)[]` | `xLabels` | Identity of each bar. With `sort` it follows bars across rankings; on its own it turns the chart into a stream (bars slide in and out). |
 | `maxBars` | `number` | — | With `sort`, show only the first N bars. |
 | `scrub` | `boolean` | `false` | Drag along the bars to select the one under the finger. |
 | `loading` | `boolean` | `false` | Pulsing placeholder bars; the data grows from them. |
 | `skeletonColor` | `string` | `'#e6e6e9'` | Color of the placeholder bars. |
+| `editable` | `boolean \| (index) => boolean` | `false` | Drag bars to change their values (all bars, or the ones the function allows). |
+| `step` | `number` | — | Snap edited values to this step. |
+| `onChange` | `(values, index) => void` | — | Called while a bar is dragged, with the new values. The chart is controlled: update `dataY` from here. |
+| `onChangeEnd` | `(values, index) => void` | — | Called when the drag ends (e.g. to save). |
+| `editableStyle` | `ViewStyle` | — | Extra style for editable bars (e.g. `{ opacity: 0.55 }` for "planned"). |
+| `marker` | `{ at, label?, color?, labelStyle? }` | — | Dashed line before bar `at` (e.g. "Today"). |
 | `animationDuration` | `number` | `300` | Duration in ms. |
 | `animationDelay` | `'random' \| 'stagger' \| 'none' \| number` | `'random'` | Delay before each bar starts. A number means *ms × bar index*. |
 | `easing` | `EasingFunction` | `Easing.out(Easing.cubic)` | Any function from React Native's `Easing`. |
@@ -257,7 +333,7 @@ const [selected, setSelected] = useState(null);
 
 ### Accessibility
 
-Each bar exposes an accessibility label like `"Apr: $260"` (x-label + value label; with `series`, `"Q1: Sales 120, Costs 80"`) and a `selected` accessibility state, and bars become buttons when `onBarPress`, `onSelectionChange`, `showTooltip` or `scrub` is set. While `loading`, the chart is announced as busy. Animations are disabled automatically when the user has "Reduce motion" enabled.
+Each bar exposes an accessibility label like `"Apr: $260"` (x-label + value label; with `series`, `"Q1: Sales 120, Costs 80"`) and a `selected` accessibility state. Bars become buttons when `onBarPress`, `onSelectionChange`, `showTooltip` or `scrub` is set, and editable bars are *adjustable*: screen-reader users swipe up / down to change them by one `step`. While `loading`, the chart is announced as busy. Animations are disabled automatically when the user has "Reduce motion" enabled.
 
 ## Migrating from 0.0.x
 
@@ -274,8 +350,9 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list.
 
 ## Roadmap
 
-- Line chart
 - Example app (Expo) and a Snack
+- More ways to touch data: drag-to-reorder, range selection
+- Line chart
 
 Ideas and PRs are welcome — open an [issue](https://github.com/nachourpi/react-native-animated-charts/issues).
 

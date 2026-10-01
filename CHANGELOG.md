@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0 — 2026-10-01
+
+### Added
+- **Drag to edit**: `editable` (all bars or a predicate), `step`, `onChange`, `onChangeEnd`, `editableStyle`. Bars follow the finger with a live tooltip and a grip; the scale is frozen while dragging; drags along the values edit and drags along the bars still scrub. Editable bars are adjustable with VoiceOver / TalkBack.
+- **Live data**: passing `ids` without `sort` turns the chart into a stream. New ids slide in from the edge, removed ones slide out (from the front) or shrink (elsewhere). Also used by `sort`, so races show bars leaving the ranking too.
+- `marker` (`{ at, label, color }`): a dashed "Today" line between bars.
+- README rewritten, with a GIF per feature (plan vs. actual, drag to edit, live data, bar chart race, scrub).
+
+### Fixed
+- Sorted charts (1.3.0) remounted a bar, so it grew again from zero, whenever its position in the data changed (e.g. a race fed with data in a different order each frame).
+- X-axis labels use the whole slot width instead of the bar width, so short names no longer get truncated with many bars.
+
 ## 1.3.0 — 2026-10-01
 
 ### Added
