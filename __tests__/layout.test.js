@@ -6,6 +6,11 @@ import {
   computeSlot,
   computeDelay,
   computeOrder,
+  enterFrom,
+  isEditable,
+  leaveTargets,
+  snapValue,
+  valueFromDrag,
   computeRowLayout,
   computeTicks,
   resolveColor,
@@ -227,5 +232,50 @@ describe('scrubIndex', () => {
   it('returns null without bars or size', () => {
     expect(scrubIndex(5, { pitch: 0, count: 3 })).toBeNull();
     expect(scrubIndex(5, { pitch: 10, count: 0 })).toBeNull();
+  });
+});
+
+describe('editing helpers', () => {
+  it('snapValue snaps to the step grid without float noise', () => {
+    expect(snapValue(7.3, 5)).toBe(5);
+    expect(snapValue(7.6, 5)).toBe(10);
+    expect(snapValue(0.30000000000000004)).toBe(0.3);
+    expect(snapValue(0.29, 0.1)).toBe(0.3);
+    expect(snapValue(12, 5, 1)).toBe(11);
+  });
+  it('valueFromDrag converts px to value, clamps and snaps', () => {
+    const scale = { lo: 0, hi: 100, length: 200 };
+    expect(valueFromDrag(50, 20, scale)).toBe(60);
+    expect(valueFromDrag(50, -500, scale)).toBe(0);
+    expect(valueFromDrag(50, 500, scale)).toBe(100);
+    expect(valueFromDrag(50, 13, { ...scale, step: 5 })).toBe(55);
+    expect(valueFromDrag(50, 40, { ...scale, max: 60 })).toBe(60);
+    expect(valueFromDrag(-10, -10, { lo: -50, hi: 50, length: 100 })).toBe(-20);
+    expect(valueFromDrag(5, 10, { lo: 0, hi: 0, length: 100 })).toBe(5);
+  });
+  it('isEditable accepts booleans and predicates', () => {
+    expect(isEditable(true, 3)).toBe(true);
+    expect(isEditable(undefined, 3)).toBe(false);
+    expect(isEditable((i) => i > 2, 3)).toBe(true);
+    expect(isEditable((i) => i > 2, 1)).toBe(false);
+  });
+});
+
+describe('enter / leave transitions', () => {
+  it('a bar appended to a stream comes in from one slot out', () => {
+    expect(enterFrom({ rank: 4, count: 5, sorted: false, visibleCount: 5 })).toBe(5);
+    expect(enterFrom({ rank: 2, count: 5, sorted: false, visibleCount: 5 })).toBe(2);
+  });
+  it('a new bar in a race comes in from past the visible bars', () => {
+    expect(enterFrom({ rank: 1, count: 8, sorted: true, visibleCount: 5 })).toBe(5);
+    expect(enterFrom({ rank: 6, count: 8, sorted: true, visibleCount: 5 })).toBe(6);
+  });
+  it('bars dropped from the front slide out; others shrink in place', () => {
+    expect(leaveTargets(['a', 'b', 'c', 'd'], [0, 1, 2, 3], ['c', 'd', 'e'])).toEqual({
+      a: { rank: -2, shrink: false },
+      b: { rank: -1, shrink: false },
+    });
+    expect(leaveTargets(['a', 'b', 'c'], [0, 1, 2], ['a', 'c'])).toEqual({ b: { rank: 1, shrink: true } });
+    expect(leaveTargets(['a', 'b'], [1, 0], ['a', 'b'])).toEqual({});
   });
 });

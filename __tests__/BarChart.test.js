@@ -528,3 +528,189 @@ describe('scrub', () => {
     expect(plot().onMoveShouldSetResponderCapture).toBeUndefined();
   });
 });
+
+describe('editable', () => {
+  const plot = () => screen.getByTestId('bar-chart-plot').props;
+  const ev = (pageX, pageY) => ({ nativeEvent: { pageX, pageY } });
+  // Starts a drag at `from`, moves through `points` and releases; returns whether it was claimed.
+  const drag = async (from, points, { release = true } = {}) => {
+    plot().onStartShouldSetResponderCapture(ev(...from));
+    const claims = plot().onMoveShouldSetResponderCapture(ev(...points[0]));
+    if (!claims) return false;
+    await act(async () => plot().onResponderGrant(ev(...points[0])));
+    for (const p of points.slice(1)) await act(async () => plot().onResponderMove(ev(...p)));
+    if (release) await act(async () => plot().onResponderRelease(ev(0, 0)));
+    return true;
+  };
+  // Vertical chart: height 224 → 200px plot; maxValue 100 → 2px per unit.
+  const setup = async (props = {}) => {
+    const onChange = jest.fn();
+    const onChangeEnd = jest.fn();
+    await render(
+      <BarChart dataY={[50, 20]} maxValue={100} height={224} editable onChange={onChange} onChangeEnd={onChangeEnd} {...props} />
+    );
+    await layoutTrack(300);
+    return { onChange, onChangeEnd };
+  };
+  const pad = (computeBarMargin(2) / 100) * 300;
+
+  it('dragging a bar up raises its value', async () => {
+    const { onChange, onChangeEnd } = await setup();
+    expect(await drag([pad + 10, 150], [[pad + 10, 140], [pad + 10, 110]])).toBe(true);
+    expect(onChange).toHaveBeenLastCalledWith([70, 20], 0);
+    expect(onChangeEnd).toHaveBeenCalledWith([70, 20], 0);
+  });
+
+  it('snaps to step and clamps to the scale', async () => {
+    const { onChange } = await setup({ step: 25 });
+    await drag([pad + 10, 150], [[pad + 10, 140], [pad + 10, 125]]); // +12.5 → snaps to 75
+    expect(onChange).toHaveBeenLastCalledWith([75, 20], 0);
+    await drag([pad + 10, 150], [[pad + 10, 140], [pad + 10, -900]]);
+    expect(onChange).toHaveBeenLastCalledWith([100, 20], 0);
+  });
+
+  it('shows the live value in a tooltip while dragging, and the bar follows instantly', async () => {
+    await setup({ formatValue: (v) => `${v}%` });
+    await drag([pad + 10, 150], [[pad + 10, 140], [pad + 10, 110]], { release: false });
+    expect(screen.getByText('70%')).toBeTruthy();
+    expect(screen.getByTestId('bar-chart-bar-0-tooltip')).toBeTruthy();
+    await act(async () => plot().onResponderRelease(ev(0, 0)));
+    expect(screen.queryByTestId('bar-chart-bar-0-tooltip')).toBeNull();
+  });
+
+  it('falls back to the data when the parent ignores onChange (controlled)', async () => {
+    await setup({ showValues: true });
+    await drag([pad + 10, 150], [[pad + 10, 140], [pad + 10, 110]]);
+    expect(screen.getByText('50')).toBeTruthy();
+  });
+
+  it('only the bars allowed by the predicate can be dragged', async () => {
+    const { onChange } = await setup({ editable: (i) => i === 1 });
+    expect(await drag([pad + 10, 150], [[pad + 10, 130]])).toBe(false);
+    expect(await drag([290, 150], [[290, 130], [290, 120]])).toBe(true);
+    expect(onChange).toHaveBeenLastCalledWith([50, 35], 1);
+  });
+
+  it('drags along the bars scrub, drags along the values edit', async () => {
+    const onSelectionChange = jest.fn();
+    const { onChange } = await setup({ scrub: true, onSelectionChange });
+    await drag([pad + 10, 150], [[pad + 40, 152], [290, 152]]);
+    expect(onSelectionChange).toHaveBeenLastCalledWith(1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('edits horizontal bars by dragging right', async () => {
+    const onChange = jest.fn();
+    await render(<BarChart horizontal dataY={[50, 20]} maxValue={100} height={80} editable onChange={onChange} />);
+    await layoutTrack(256); // 256 - 56 label space = 200px → 2px per unit
+    await drag([60, 10], [[70, 11], [100, 11]]);
+    expect(onChange).toHaveBeenLastCalledWith([70, 20], 0);
+  });
+
+  it('draws a grip, applies editableStyle and is adjustable for screen readers', async () => {
+    const { onChange, onChangeEnd } = await setup({ step: 5, editableStyle: { opacity: 0.6 } });
+    expect(screen.getByTestId('bar-chart-bar-0-handle')).toBeTruthy();
+    expect(styleOf('bar-chart-bar-0').opacity).toBe(0.6);
+    const slot = screen.getByTestId('bar-chart-slot-0');
+    expect(slot.props.accessibilityRole).toBe('adjustable');
+    expect(slot.props.accessibilityValue).toEqual({ text: '50' });
+    await act(async () => slot.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+    expect(onChange).toHaveBeenLastCalledWith([55, 20], 0);
+    expect(onChangeEnd).toHaveBeenLastCalledWith([55, 20], 0);
+    await act(async () => slot.props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } }));
+    expect(onChange).toHaveBeenLastCalledWith([45, 20], 0);
+  });
+
+  it('is off for series and while loading', async () => {
+    await render(<BarChart series={[{ data: [1] }]} editable />);
+    await layoutTrack(300);
+    expect(plot().onMoveShouldSetResponderCapture).toBeUndefined();
+    await screen.rerender(<BarChart dataY={[1]} editable loading />);
+    expect(plot().onMoveShouldSetResponderCapture).toBeUndefined();
+  });
+});
+
+describe('stream (ids)', () => {
+  const translate = (id) => styleOf(id).transform[0];
+
+  it('places bars by position and keeps them keyed by id', async () => {
+    await render(<BarChart dataY={[1, 2, 3]} ids={['a', 'b', 'c']} />);
+    await layoutTrack(300);
+    const pad = (computeBarMargin(3) / 100) * 300;
+    const pitch = (300 - 2 * pad) / 3;
+    expect(translate('bar-chart-slide-2')).toEqual({ translateX: 2 * pitch });
+  });
+
+  it('a new value enters from one slot out and the oldest slides out, then is removed', async () => {
+    await render(<BarChart horizontal dataY={[1, 2, 3]} ids={['a', 'b', 'c']} xLabels={['a', 'b', 'c']} height={120} />);
+    await layoutTrack(300);
+    const barB = screen.getByTestId('bar-chart-bar-1');
+    await screen.rerender(<BarChart horizontal dataY={[2, 3, 4]} ids={['b', 'c', 'd']} xLabels={['b', 'c', 'd']} height={120} />);
+    // 'b' is now at index 0 but keeps the same bar (no remount, no regrow from zero)...
+    expect(screen.getByTestId('bar-chart-bar-0')).toBe(barB);
+    // ...and its position value: still at its old slot (40px), sliding to 0 from there
+    expect(translate('bar-chart-slide-0')).toEqual({ translateY: 40 });
+    expect(translate('bar-chart-slide-2')).toEqual({ translateY: 3 * 40 }); // 'd' starts below the last slot
+    expect(screen.getByTestId('bar-chart-leaving-a')).toBeTruthy();
+    expect(screen.getAllByText('a').length).toBeGreaterThan(0); // its label leaves with it
+    await act(async () => jest.advanceTimersByTime(400));
+    expect(screen.queryByTestId('bar-chart-leaving-a')).toBeNull();
+  });
+
+  it('vertical stream: shifted bars and the one leaving keep their instances', async () => {
+    await render(<BarChart dataY={[1, 2, 3]} ids={['a', 'b', 'c']} />);
+    await layoutTrack(300);
+    const barA = screen.getByTestId('bar-chart-bar-0');
+    const barC = screen.getByTestId('bar-chart-bar-2');
+    await screen.rerender(<BarChart dataY={[2, 3, 4]} ids={['b', 'c', 'd']} />);
+    expect(screen.getByTestId('bar-chart-bar-1')).toBe(barC);
+    // 'a' became a leaving bar without remounting (it slides out from where it was)
+    expect(screen.getByTestId('bar-chart-leaving-a-bar')).toBe(barA);
+  });
+
+  it('a fast stream does not pile up leaving bars', async () => {
+    let ids = ['a', 'b', 'c'];
+    await render(<BarChart horizontal dataY={[1, 2, 3]} ids={ids} height={120} />);
+    await layoutTrack(300);
+    for (let n = 0; n < 5; n++) {
+      ids = [...ids.slice(1), `n${n}`];
+      await screen.rerender(<BarChart horizontal dataY={[1, 2, 3]} ids={ids} height={120} />);
+      await act(async () => jest.advanceTimersByTime(150)); // faster than the 300ms animation
+    }
+    await act(async () => jest.advanceTimersByTime(400));
+    expect(screen.queryAllByTestId(/bar-chart-leaving-/)).toHaveLength(0);
+  });
+
+  it('a bar that comes back before it is gone stays', async () => {
+    await render(<BarChart horizontal dataY={[1, 2]} ids={['a', 'b']} height={80} />);
+    await layoutTrack(300);
+    await screen.rerender(<BarChart horizontal dataY={[2]} ids={['b']} height={80} />);
+    await screen.rerender(<BarChart horizontal dataY={[1, 2]} ids={['a', 'b']} height={80} />);
+    await act(async () => jest.advanceTimersByTime(400));
+    expect(screen.queryByTestId('bar-chart-leaving-a')).toBeNull();
+    expect(screen.getByTestId('bar-chart-slide-0')).toBeTruthy();
+  });
+});
+
+describe('marker', () => {
+  it('draws a labelled line before slot `at` (vertical)', async () => {
+    await render(<BarChart dataY={[1, 2, 3, 4]} marker={{ at: 2, label: 'Now' }} />);
+    await layoutTrack(400);
+    const pad = (computeBarMargin(4) / 100) * 400;
+    const pitch = (400 - 2 * pad) / 4;
+    expect(styleOf('bar-chart-marker').left).toBeCloseTo(pad + 2 * pitch);
+    expect(screen.getByText('Now')).toBeTruthy();
+  });
+
+  it('horizontal: a line across the rows', async () => {
+    await render(<BarChart horizontal dataY={[1, 2, 3]} marker={{ at: 1, color: '#f00' }} height={120} />);
+    await layoutTrack(300);
+    expect(styleOf('bar-chart-marker')).toEqual(expect.objectContaining({ top: 40, borderColor: '#f00' }));
+  });
+
+  it('is not drawn without `at`', async () => {
+    await render(<BarChart dataY={[1, 2]} marker={{ label: 'x' }} />);
+    await layoutTrack(300);
+    expect(screen.queryByTestId('bar-chart-marker')).toBeNull();
+  });
+});

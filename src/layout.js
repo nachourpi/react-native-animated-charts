@@ -289,3 +289,59 @@ export function scrubIndex(position, { offset = 0, pitch, count }) {
   const i = Math.floor((position - offset) / pitch);
   return Math.min(count - 1, Math.max(0, i));
 }
+
+/** Snaps `value` to the `step` grid (anchored at `origin`) without float noise. No step = unchanged. */
+export function snapValue(value, step, origin = 0) {
+  const st = Number(step);
+  if (!(st > 0)) return roundFloat(value);
+  return roundFloat(origin + Math.round((value - origin) / st) * st);
+}
+
+/**
+ * New value while dragging a bar: the start value plus the finger's movement along the value
+ * axis, converted with the (frozen) scale, clamped to [min, max] and snapped to `step`.
+ * `delta` is in px, positive = towards larger values (up for vertical, right for horizontal).
+ */
+export function valueFromDrag(startValue, delta, { lo, hi, length, step, min, max }) {
+  if (!(length > 0) || !(hi - lo > 0)) return startValue;
+  const raw = toNumber(startValue) + (delta * (hi - lo)) / length;
+  const lower = Number.isFinite(Number(min)) ? Number(min) : lo;
+  const upper = Number.isFinite(Number(max)) ? Number(max) : hi;
+  const clamped = Math.min(upper, Math.max(lower, raw));
+  return Math.min(upper, Math.max(lower, snapValue(clamped, step, lower)));
+}
+
+/** Whether bar `index` can be dragged: `editable` is a boolean or a predicate on the index. */
+export function isEditable(editable, index) {
+  return typeof editable === 'function' ? !!editable(index) : !!editable;
+}
+
+/**
+ * Slot (in pitches) a newly added bar starts from, so it slides in instead of popping:
+ * - sorted (race): from just past the visible bars, then up/left into its rank;
+ * - stream: a bar added at the end comes in from one slot further out.
+ */
+export function enterFrom({ rank, count, sorted, visibleCount }) {
+  if (sorted) return Math.max(rank, visibleCount);
+  return rank === count - 1 ? rank + 1 : rank;
+}
+
+/**
+ * Where removed bars go. Bars removed from the front (a stream window moving on) slide out
+ * past the start; any other removed bar shrinks in place.
+ * @returns {Object<string, {rank:number, shrink:boolean}>}
+ */
+export function leaveTargets(prevKeys, prevRank, keys) {
+  const live = new Set(keys);
+  const removed = prevKeys
+    .map((key, i) => ({ key, rank: prevRank[i] }))
+    .filter((r) => !live.has(r.key))
+    .sort((a, b) => a.rank - b.rank);
+  let leading = 0;
+  while (leading < removed.length && removed[leading].rank === leading) leading++;
+  const out = {};
+  removed.forEach((r, j) => {
+    out[r.key] = j < leading ? { rank: r.rank - leading, shrink: false } : { rank: r.rank, shrink: true };
+  });
+  return out;
+}

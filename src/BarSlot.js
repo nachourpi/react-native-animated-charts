@@ -10,7 +10,7 @@ const CLIP_PAD = 60; // extra room beside a bar for its value label
  * by its length, so only its end shows inside the clipped region. Offset 0 always means
  * "hidden", whatever the region size, and only `transform` is animated (native driver).
  */
-function Segment({ value, horizontal, side, regionLength, length, color, radius, label, labelSpace, labelStyle, duration, delay, easing, testID }) {
+function Segment({ value, horizontal, side, regionLength, length, color, radius, label, labelSpace, labelStyle, duration, delay, easing, handle, extraStyle, testID }) {
   const R = regionLength;
   const key = `${horizontal ? 'h' : 'v'}${side}`;
   const target = SIGN[key] * length;
@@ -39,7 +39,8 @@ function Segment({ value, horizontal, side, regionLength, length, color, radius,
   const transform = horizontal ? [{ translateX: value }] : [{ translateY: value }];
 
   return (
-    <Animated.View testID={testID} style={[PARK[key], shape, { backgroundColor: color, transform }]}>
+    <Animated.View testID={testID} style={[PARK[key], shape, { backgroundColor: color }, extraStyle, { transform }]}>
+      {handle && length > 0 ? <View pointerEvents="none" testID={testID && `${testID}-handle`} style={HANDLE[key]} /> : null}
       {label != null && label !== '' ? (
         <View pointerEvents="none" style={[LABEL_PLACE[key], horizontal && { width: labelSpace }]}>
           <Text numberOfLines={1} style={[styles.label, horizontal && styles.hLabel, labelStyle]}>
@@ -78,6 +79,10 @@ export default function BarSlot({
   labelStyle,
   onPress,
   accessibilityLabel,
+  editable = false,
+  editableStyle,
+  accessibilityValue,
+  onAccessibilityAction,
   segmentTestID,
   tooltipTestID,
   testID,
@@ -136,6 +141,8 @@ export default function BarSlot({
       duration={timing.duration}
       delay={timing.delay}
       easing={easing}
+      handle={editable && s === 0 && k === 1}
+      extraStyle={editable ? editableStyle : null}
       testID={segmentTestID(s, side)}
     />
     );
@@ -218,6 +225,15 @@ export default function BarSlot({
     </>
   );
   const a11y = { accessibilityLabel, accessibilityState: { selected: !!selected } };
+  if (editable && onAccessibilityAction) {
+    // Screen readers: swipe up / down to change the value.
+    Object.assign(a11y, {
+      accessibilityRole: 'adjustable',
+      accessibilityValue,
+      accessibilityActions: [{ name: 'increment' }, { name: 'decrement' }],
+      onAccessibilityAction,
+    });
+  }
   if (onPress) {
     return (
       <Pressable testID={testID} style={slotStyle} onPress={onPress} accessibilityRole="button" {...a11y}>
@@ -240,6 +256,14 @@ const PARK = {
   hneg: { position: 'absolute', top: 0, bottom: 0, left: '100%' },
 };
 const SIGN = { vpos: -1, vneg: 1, hpos: 1, hneg: -1 };
+// Grip drawn near the end of a draggable bar.
+const GRIP = { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 2 };
+const HANDLE = {
+  vpos: { ...GRIP, top: 5, left: '30%', right: '30%', height: 3 },
+  vneg: { ...GRIP, bottom: 5, left: '30%', right: '30%', height: 3 },
+  hpos: { ...GRIP, right: 5, top: '25%', bottom: '25%', width: 3 },
+  hneg: { ...GRIP, left: 5, top: '25%', bottom: '25%', width: 3 },
+};
 const LABEL_BASE = { position: 'absolute', alignItems: 'center', justifyContent: 'center' };
 const LABEL_PLACE = {
   vpos: { ...LABEL_BASE, top: -VALUE_LABEL_SPACE, left: -60, right: -60, height: VALUE_LABEL_SPACE },

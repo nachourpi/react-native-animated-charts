@@ -111,8 +111,9 @@ export interface BarChartProps {
    */
   sort?: 'desc' | 'asc';
   /**
-   * Identity of each category, used to follow bars across updates when `sort` is set.
-   * Defaults to `xLabels`, then to the index.
+   * Identity of each bar, used to follow bars across updates. With `sort` it defaults to
+   * `xLabels`, then to the index. Without `sort`, passing `ids` turns the chart into a stream:
+   * bars are placed in data order, new ids slide in and removed ones slide out.
    */
   ids?: Array<string | number>;
   /** With `sort`: show only the first N bars; the rest slide in and out from the edge. */
@@ -129,6 +130,21 @@ export interface BarChartProps {
   loading?: boolean;
   /** Color of the placeholder bars. Default `'#e6e6e9'`. */
   skeletonColor?: string;
+  /**
+   * Let users drag bars to change their values: `true` for every bar, or a predicate on the
+   * index (e.g. only future days). Single-series charts only. The scale is frozen while dragging.
+   */
+  editable?: boolean | ((index: number) => boolean);
+  /** Snap edited values to multiples of `step` (from `minValue`, or 0). */
+  step?: number;
+  /** Called on every change while dragging (and on screen-reader adjustments). Update `dataY` here. */
+  onChange?: (values: number[], index: number) => void;
+  /** Called when a drag ends or a screen-reader adjustment is made. */
+  onChangeEnd?: (values: number[], index: number) => void;
+  /** Extra style for the editable bars, e.g. `{ opacity: 0.55 }` to mark them as planned. */
+  editableStyle?: StyleProp<ViewStyle>;
+  /** Dashed line drawn before bar `at` (e.g. "Today"), with an optional label. */
+  marker?: { at: number; label?: string; color?: string; labelStyle?: StyleProp<TextStyle> };
   /** Animation duration in ms. Default 300. */
   animationDuration?: number;
   /** `'random'` (default, 0.0.x behaviour), `'stagger'`, `'none'`, or ms per bar index. */
